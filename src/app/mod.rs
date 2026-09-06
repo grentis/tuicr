@@ -1028,6 +1028,30 @@ pub enum PrThreadsEvent {
     },
 }
 
+/// A viewed-state push queued for the background worker.
+#[derive(Debug)]
+pub enum ViewedSyncRequest {
+    Set { path: PathBuf, viewed: bool },
+}
+
+/// A viewed-state push that failed. Successes are silent.
+#[derive(Debug)]
+pub enum ViewedSyncEvent {
+    Failed {
+        path: PathBuf,
+        viewed: bool,
+        error: String,
+    },
+}
+
+/// Viewed-state worker for one PR session; dropping the sender ends it.
+#[derive(Debug)]
+pub struct ViewedSyncWorker {
+    /// PR the worker serves; a toggle for another PR replaces it.
+    pub key: crate::forge::traits::PrSessionKey,
+    pub tx: std::sync::mpsc::Sender<ViewedSyncRequest>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffViewMode {
     Unified,
@@ -1312,6 +1336,11 @@ pub struct App {
     /// Background-thread channel that delivers remote-thread fetch results.
     /// `Receiver` is only present while a fetch is in flight.
     pub pr_threads_rx: Option<std::sync::mpsc::Receiver<PrThreadsEvent>>,
+    /// Worker pushing `r` to GitHub's Viewed checkbox (`[forge]
+    /// sync_viewed`), started on a PR session's first toggle.
+    pub viewed_sync: Option<ViewedSyncWorker>,
+    /// That worker's failures.
+    pub viewed_sync_rx: Option<std::sync::mpsc::Receiver<ViewedSyncEvent>>,
 
     /// `[forge]` section settings resolved at startup. Drives the body/footer
     /// formatting on submit. Defaults to `ForgeConfig::default()` when the
@@ -1930,6 +1959,7 @@ pub mod sessions_tab;
 mod submit;
 mod theme_picker;
 mod tree;
+mod viewed_sync;
 mod visual;
 
 #[cfg(test)]
