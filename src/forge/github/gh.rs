@@ -559,6 +559,29 @@ where
         Ok(content.lines().count() as u32)
     }
 
+    fn list_viewed_files(&self, pr: &PullRequestDetails) -> Result<Vec<PathBuf>> {
+        let mut all: Vec<PathBuf> = Vec::new();
+        let mut cursor: Option<String> = None;
+        // Bounded like `list_review_threads`, so a cyclic cursor cannot hang.
+        for _ in 0..100 {
+            let args = self.build_viewed_files_args(pr, cursor.as_deref());
+            let output = self.run_gh(args, &pr.repository.host)?;
+            let parsed = super::viewed_files::parse_graphql_page(&output)?;
+            all.extend(parsed.viewed);
+            let Some(page_info) = parsed.page_info else {
+                break;
+            };
+            if !page_info.has_next_page {
+                break;
+            }
+            let Some(end_cursor) = page_info.end_cursor else {
+                break;
+            };
+            cursor = Some(end_cursor);
+        }
+        Ok(all)
+    }
+
     fn set_file_viewed(&self, pr: &PullRequestDetails, path: &Path, viewed: bool) -> Result<()> {
         let node_id = self.pull_request_node_id(pr)?;
         // GraphQL only: no REST equivalent.
@@ -658,6 +681,14 @@ where
         cursor: Option<&str>,
     ) -> Vec<String> {
         self.build_graphql_args(pr, &super::review_metadata::build_query(cursor), cursor)
+    }
+
+    fn build_viewed_files_args(
+        &self,
+        pr: &PullRequestDetails,
+        cursor: Option<&str>,
+    ) -> Vec<String> {
+        self.build_graphql_args(pr, &super::viewed_files::build_query(cursor), cursor)
     }
 
     fn build_graphql_args(
@@ -1224,7 +1255,9 @@ index 1111111..2222222 100644
                         .find(|a| a.starts_with("query="))
                         .map(String::as_str)
                         .unwrap_or("");
-                    if query.contains("FileAsViewed(") {
+                    if query.contains("viewerViewedState") {
+                        Ok(VIEWED_FILES_JSON.to_string())
+                    } else if query.contains("FileAsViewed(") {
                         Ok(VIEWED_MUTATION_JSON.to_string())
                     } else if query.contains("pullRequest(number:$number){id}") {
                         Ok(PR_NODE_ID_JSON.to_string())
@@ -1341,6 +1374,22 @@ index 1111111..2222222 100644
 +    42
  }
 "##;
+
+    const VIEWED_FILES_JSON: &str = r##"{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "files": {
+          "pageInfo": { "hasNextPage": false, "endCursor": null },
+          "nodes": [
+            { "path": "src/lib.rs", "viewerViewedState": "VIEWED" },
+            { "path": "src/main.rs", "viewerViewedState": "UNVIEWED" }
+          ]
+        }
+      }
+    }
+  }
+}"##;
 
     const PR_NODE_ID_JSON: &str = r##"{
   "data": { "repository": { "pullRequest": { "id": "PR_kwDOABCD123" } } }
@@ -2081,6 +2130,32 @@ Match host github-work
             !mutation.iter().any(|a| a == "-F"),
             "viewed-state variables must be passed as strings with -f"
         );
+    }
+
+    #[test]
+    fn should_list_viewed_files_via_graphql_api_call() {
+        // given
+        let runner = FakeGhRunner::default();
+        let backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+
+        // when
+        let viewed = backend.list_viewed_files(&details).unwrap();
+
+        // then: only the files this viewer ticked
+        assert_eq!(viewed, vec![PathBuf::from("src/lib.rs")]);
+
+        // and: scoped to the PR, no cursor on page one
+        let calls = backend.runner.calls.borrow();
+        let call = graphql_calls(&calls)
+            .into_iter()
+            .find(|args| query_of(args).contains("viewerViewedState"))
+            .expect("expected a viewed-state graphql call");
+        assert!(call.iter().any(|a| a == "owner=agavra"));
+        assert!(call.iter().any(|a| a == "number=125"));
+        assert!(!call.iter().any(|a| a.starts_with("after=")));
     }
 
     #[test]

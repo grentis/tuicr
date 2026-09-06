@@ -1044,6 +1044,16 @@ pub enum ViewedSyncEvent {
     },
 }
 
+/// Viewed state read back from the forge when a PR session opens.
+#[derive(Debug)]
+pub enum ViewedSeedEvent {
+    Done {
+        /// Session the read is for; discarded if another PR is open by then.
+        key: crate::forge::traits::PrSessionKey,
+        result: std::result::Result<Vec<PathBuf>, String>,
+    },
+}
+
 /// Viewed-state worker for one PR session; dropping the sender ends it.
 #[derive(Debug)]
 pub struct ViewedSyncWorker {
@@ -1341,6 +1351,10 @@ pub struct App {
     pub viewed_sync: Option<ViewedSyncWorker>,
     /// That worker's failures.
     pub viewed_sync_rx: Option<std::sync::mpsc::Receiver<ViewedSyncEvent>>,
+    /// PR session whose viewed state was already read (once per session).
+    pub viewed_seeded: Option<crate::forge::traits::PrSessionKey>,
+    /// That read while it is in flight.
+    pub viewed_seed_rx: Option<std::sync::mpsc::Receiver<ViewedSeedEvent>>,
 
     /// `[forge]` section settings resolved at startup. Drives the body/footer
     /// formatting on submit. Defaults to `ForgeConfig::default()` when the
