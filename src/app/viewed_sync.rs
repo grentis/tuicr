@@ -35,7 +35,6 @@ impl App {
             viewed,
         };
         if worker.tx.send(request).is_err() {
-            // The worker is gone; its last failure was already reported.
             self.viewed_sync = None;
         }
     }
@@ -124,9 +123,7 @@ impl App {
         let Some((key, details)) = self.viewed_sync_target() else {
             return false;
         };
-        // Claim the session before spawning: the read happens once even if it
-        // fails, so a PR whose files GitHub will not report does not queue a
-        // fresh request on every tick.
+        // Claim the session first, so a failed read is not retried each tick.
         self.viewed_seeded = Some(key.clone());
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -231,9 +228,7 @@ impl App {
                     error,
                 }) => {
                     let verb = if viewed { "mark" } else { "unmark" };
-                    // The local marker stays as the user left it: losing a
-                    // toggle under the cursor is worse than a stale checkbox
-                    // on GitHub, which `:reload` will resync anyway.
+                    // The local marker stays; `:reload` resyncs.
                     warning = Some(format!(
                         "GitHub: could not {verb} {} as viewed \u{00b7} {error}",
                         path.display()
