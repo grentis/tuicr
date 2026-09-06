@@ -639,6 +639,11 @@ pub trait ForgeBackend {
         None
     }
 
+    /// Paths the viewer has marked viewed on the forge. None by default.
+    fn list_viewed_files(&self, _pr: &PullRequestDetails) -> Result<Vec<PathBuf>> {
+        Ok(Vec::new())
+    }
+
     /// Set the viewer's per-file "viewed" checkbox on the forge, for `path` as
     /// in the PR diff. Unsupported by default; GitHub overrides it.
     fn set_file_viewed(&self, _pr: &PullRequestDetails, _path: &Path, _viewed: bool) -> Result<()> {

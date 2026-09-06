@@ -144,7 +144,7 @@ Shown below the file tree when local comments or visible remote PR threads exist
 
 | Key | Action |
 |-----|--------|
-| `r` | Toggle file reviewed |
+| `r` | Toggle file reviewed (syncs with GitHub's *Viewed* checkbox via `[forge] sync_viewed`) |
 | `R` | Toggle hunk reviewed |
 | `c` | Add line comment (or file comment if not on a diff line) |
 | `C` | Add file comment |
@@ -172,6 +172,30 @@ to a temp directory and opens that, so the text and the line the cursor sits on
 match the diff. The status bar names which one you got, e.g.
 `Opened src/main.rs @ 1a2b3c4 (read-only PR copy)`. Binary files are only opened
 from the checkout, never copied.
+
+### Syncing `r` with GitHub's Viewed checkbox
+
+`sync_viewed = true` under `[forge]` in `config.toml` makes `r` and GitHub's
+per-file **Viewed** checkbox track each other on a pull request: marking a file
+reviewed ticks the box on github.com, unmarking clears it, and files you ticked
+on the web open here already reviewed — collapsed, and counted in the tree's
+`reviewed/total`. Without it `r` stays local, which is the default: the sync
+turns a keystroke into a write to GitHub under your account.
+
+GitHub pull requests only. Local diffs, commit ranges, and GitLab, Bitbucket,
+Gitea, Gerrit, and Azure DevOps reviews ignore the setting, because none of them
+expose a per-viewer file state. `R` never syncs either — a hunk has no GitHub
+equivalent.
+
+Two things stay deliberately unaffected. Nothing blocks on the network: the
+local marker applies the moment you press `r` and stays applied even if the
+push fails, so walking a file list never stalls mid-keystroke — a failure
+surfaces once in the status bar, and `:e` resyncs. And the read only ever
+*adds* markers: a file reviewed here is never un-reviewed by what GitHub
+reports, since unticking a box on the web is easy to do by accident and a lost
+marker is the one direction `r` cannot undo. GitHub's `DISMISSED` state —
+viewed, then changed by a later commit — does not count as viewed. See
+[Viewed state](CONFIG.md#viewed-state) for the config details.
 
 ## Visual mode
 
