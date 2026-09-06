@@ -1071,6 +1071,8 @@ impl App {
     ) {
         self.forge_review_threads.clear();
         self.forge_review_threads_loading = true;
+        // A reload re-reads the viewed state too, on the next tick.
+        self.viewed_seeded = None;
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.pr_threads_rx = Some(rx);
