@@ -173,11 +173,24 @@ Repository-managed agent integrations:
   `toggle_reviewed_for_file_idx` calls `advance_past_hidden_file()` to land on the next
   visible file (wrapping, then parking at the overview once the queue empties). It runs
   regardless of the `adjust_cursor` argument — the tree selection has to move either way.
+- `r` on a `FileTreeItem::Directory` row runs `toggle_reviewed_for_directory()`, which
+  marks or unmarks every file at or below it. **It scopes to `file_matches_patterns`, not
+  `file_passes_filter`** — the third consumer that has to pick between the two predicates.
+  Reading the on-screen set would make the all-or-nothing decision undecidable while
+  reviewed files are hidden: no reviewed file is visible, so every directory would look
+  unreviewed and the toggle could only ever mark. Membership is `Path::starts_with`, which
+  compares whole components, so `src/app` does not claim `src/appearance.rs`. Files absent
+  from `ReviewSession.files` are filtered out *before* the decision, not just skipped
+  during it — counting an unmarkable path as unreviewed would drag the directory into mark
+  mode (see gotcha 15). One `rebuild_annotations()` for the batch, then the same
+  `advance_past_hidden_file()` landing as the single-file toggle.
 - `file_filter.draft` makes the tree a text-input sub-state of `InputMode::Normal`, the same
   shape as `pr_filter_draft` for the target selector; `main.rs` routes to
   `map_file_tree_prompt_mode` while it is `Some`
 - Keys are focus-scoped via `map_file_tree_mode`: the tree claims `i`/`e`/`I`/`E`/`/`, the
-  diff keeps `i` = edit comment and `/` = search diff
+  diff keeps `i` = edit comment and `/` = search diff. `r` is shared but not identical: in
+  the tree it dispatches on the selected row's `FileTreeItem` variant, so a directory row
+  takes the batch path
 
 **InputMode** (`src/app.rs`):
 
