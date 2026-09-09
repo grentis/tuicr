@@ -65,9 +65,33 @@ Press `?` to open help.
 | `E` | Clear the exclude filter |
 | `/` | Search file paths (substring) |
 | `n` / `N` | Next / previous file-path match |
+| `r` | Toggle reviewed for the selected file, or every file under the selected directory |
 
 These keys are only active while the file tree is focused — in the diff, `i` still
 edits the comment at the cursor and `/` still searches the diff.
+
+### Marking a directory reviewed
+
+`r` on a directory row toggles every file at or below it, expanded or collapsed,
+at any depth. It is all-or-nothing: a directory whose files are *all* reviewed
+unmarks them, anything else marks the lot. That keeps `r` the toggle it is on a
+single file — a mis-press on a forty-file directory is undone by pressing `r`
+again — rather than a one-way key you can only reverse by descending into every
+child.
+
+The `i` / `e` filters scope it: a file they exclude is not part of the directory
+for this purpose, so `e` a pattern and `r` a directory marks only what is left.
+Hiding reviewed files does not scope it, though — the decision reads the review
+population, not the rows on screen, since otherwise a directory whose reviewed
+files were hidden would look untouched and `r` could only ever mark. With
+`:set noreviewed` active the marked rows leave the tree along with their
+directory, and the selection lands on the next file still to review, exactly as
+it does when `r` hides a single file.
+
+With `[forge] sync_viewed` on, each file marked this way ticks its own **Viewed**
+checkbox on GitHub. Nothing blocks: the pushes queue on the background worker, so
+a large directory keeps the keystroke instant and settles on github.com behind
+you.
 
 ### Filtering
 

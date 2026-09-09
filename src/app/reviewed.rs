@@ -316,6 +316,70 @@ impl App {
         self.toggle_reviewed_for_file_idx(file_idx, true);
     }
 
+    /// Toggle every file under a directory: unmark them if all are reviewed,
+    /// otherwise mark them all, so a second press undoes the first.
+    ///
+    /// Counts the review's files (`file_matches_patterns`), not the visible
+    /// rows: with reviewed files hidden, every directory would look
+    /// unreviewed.
+    pub fn toggle_reviewed_for_directory(&mut self, dir: &str) {
+        let dir_path = Path::new(dir);
+        // `starts_with` compares whole components (`src/app` is not a prefix
+        // of `src/appearance.rs`). Only files the session knows count.
+        let targets: Vec<(usize, PathBuf)> = self
+            .diff_files
+            .iter()
+            .enumerate()
+            .filter(|(_, file)| self.file_matches_patterns(file))
+            .map(|(idx, file)| (idx, file.display_path().clone()))
+            .filter(|(_, path)| path.starts_with(dir_path) && self.session.files.contains_key(path))
+            .collect();
+
+        if targets.is_empty() {
+            self.set_warning(format!("No reviewable files under {dir}"));
+            return;
+        }
+
+        let mark = !targets
+            .iter()
+            .all(|(_, path)| self.session.is_file_reviewed(path));
+
+        let mut changed = 0;
+        for (_, path) in &targets {
+            if let Some(review) = self.session.get_file_mut(path)
+                && review.reviewed != mark
+            {
+                review.reviewed = mark;
+                changed += 1;
+                // Fire-and-forget, as for a single file.
+                self.push_viewed_state(path, mark);
+            }
+        }
+
+        if changed == 0 {
+            return;
+        }
+
+        self.dirty = true;
+        self.revealed_reviewed_file = None;
+        self.rebuild_annotations();
+        let verb = if mark { "reviewed" } else { "unreviewed" };
+        self.set_message(format!("{changed} file(s) in {dir} marked {verb}"));
+
+        // With reviewed files hidden, marking removes the rows (the directory
+        // too): move past it, as for a single file.
+        if mark && !self.show_reviewed() {
+            let last_idx = targets.last().map(|(idx, _)| *idx).unwrap_or(0);
+            self.advance_past_hidden_file(last_idx);
+            return;
+        }
+
+        // Otherwise the selection holds, but collapsed files can leave the
+        // cursor past the end.
+        self.diff_state.cursor_line = self.diff_state.cursor_line.min(self.max_cursor_line());
+        self.ensure_cursor_visible();
+    }
+
     pub fn toggle_reviewed_for_file_idx(&mut self, file_idx: usize, adjust_cursor: bool) {
         let Some(path) = self
             .diff_files

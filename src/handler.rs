@@ -1551,13 +1551,15 @@ pub fn handle_file_list_action(app: &mut App, action: Action) {
                 }
             }
         }
-        Action::ToggleReviewed => {
-            if let Some(FileTreeItem::File { file_idx, .. }) = app.get_selected_tree_item() {
+        Action::ToggleReviewed => match app.get_selected_tree_item() {
+            Some(FileTreeItem::File { file_idx, .. }) => {
                 app.toggle_reviewed_for_file_idx(file_idx, false);
-            } else {
-                app.set_warning("Select a file to toggle reviewed");
             }
-        }
+            Some(FileTreeItem::Directory { path, .. }) => {
+                app.toggle_reviewed_for_directory(&path);
+            }
+            None => app.set_warning("Select a file to toggle reviewed"),
+        },
         _ => handle_shared_normal_action(app, action),
     }
 }
