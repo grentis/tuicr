@@ -693,3 +693,147 @@ fn should_not_hide_a_file_whose_hunks_are_merely_all_hunk_reviewed() {
 
     assert_eq!(visible_paths(&app), vec!["a.rs", "b.rs"]);
 }
+
+// ---- `r` on a directory row -------------------------------------------
+
+/// Select the tree row for directory `dir`, the way `j`/`k` would land on it.
+fn select_dir(app: &mut App, dir: &str) {
+    let idx = app
+        .build_visible_items()
+        .iter()
+        .position(|item| matches!(item, FileTreeItem::Directory { path, .. } if path == dir))
+        .unwrap_or_else(|| panic!("no directory row for {dir}"));
+    app.file_list_state.select(idx);
+}
+
+/// Press `r` with the file tree focused, the way a user would.
+fn press_r(app: &mut App) {
+    app.focused_panel = FocusedPanel::FileList;
+    crate::handler::handle_file_list_action(app, Action::ToggleReviewed);
+}
+
+fn reviewed_paths(app: &App) -> Vec<String> {
+    let mut paths: Vec<String> = app
+        .diff_files
+        .iter()
+        .filter(|file| app.session.is_file_reviewed(file.display_path()))
+        .map(|file| file.display_path().display().to_string())
+        .collect();
+    paths.sort();
+    paths
+}
+
+#[test]
+fn should_mark_every_file_under_a_directory_row() {
+    let mut app = app_with(&["src/a.rs", "src/b.rs", "docs/c.md"]);
+    select_dir(&mut app, "src");
+
+    press_r(&mut app);
+
+    assert_eq!(reviewed_paths(&app), vec!["src/a.rs", "src/b.rs"]);
+}
+
+#[test]
+fn should_mark_files_nested_below_a_parent_directory() {
+    let mut app = app_with(&["src/a.rs", "src/app/b.rs", "src/app/deep/c.rs"]);
+    select_dir(&mut app, "src");
+
+    press_r(&mut app);
+
+    assert_eq!(
+        reviewed_paths(&app),
+        vec!["src/a.rs", "src/app/b.rs", "src/app/deep/c.rs"],
+        "the toggle reaches every depth, not just direct children"
+    );
+}
+
+#[test]
+fn should_unmark_a_directory_whose_files_are_all_reviewed() {
+    let mut app = app_with(&["src/a.rs", "src/b.rs"]);
+    select_dir(&mut app, "src");
+    press_r(&mut app);
+    assert_eq!(app.reviewed_count(), 2, "precondition: all marked");
+
+    select_dir(&mut app, "src");
+    press_r(&mut app);
+
+    assert!(
+        reviewed_paths(&app).is_empty(),
+        "a second press undoes the first, the way it does on a file"
+    );
+}
+
+#[test]
+fn should_mark_the_remainder_when_a_directory_is_partly_reviewed() {
+    let mut app = app_with(&["src/a.rs", "src/b.rs", "src/c.rs"]);
+    mark_reviewed(&mut app, "src/b.rs");
+    select_dir(&mut app, "src");
+
+    press_r(&mut app);
+
+    assert_eq!(
+        reviewed_paths(&app),
+        vec!["src/a.rs", "src/b.rs", "src/c.rs"],
+        "mixed means mark the rest, never unmark the ones already done"
+    );
+}
+
+#[test]
+fn should_not_claim_a_sibling_directory_sharing_a_path_prefix() {
+    let mut app = app_with(&["src/app/a.rs", "src/appearance/b.rs"]);
+    select_dir(&mut app, "src/app");
+
+    press_r(&mut app);
+
+    assert_eq!(
+        reviewed_paths(&app),
+        vec!["src/app/a.rs"],
+        "`src/app` must not swallow `src/appearance`"
+    );
+}
+
+#[test]
+fn should_leave_excluded_files_alone_when_marking_a_directory() {
+    let mut app = app_with(&["src/a.rs", "src/b.test.rs"]);
+    apply(&mut app, FileTreePrompt::Exclude, r"\.test\.rs$");
+    select_dir(&mut app, "src");
+
+    press_r(&mut app);
+
+    assert_eq!(
+        reviewed_paths(&app),
+        vec!["src/a.rs"],
+        "a file filtered out of the review population is not part of the directory"
+    );
+}
+
+#[test]
+fn should_advance_past_a_directory_marked_while_hiding_reviewed_files() {
+    let mut app = app_with(&["src/a.rs", "src/b.rs", "z.rs"]);
+    app.set_show_reviewed(false);
+    select_dir(&mut app, "src");
+
+    press_r(&mut app);
+
+    assert_eq!(
+        visible_paths(&app),
+        vec!["z.rs"],
+        "the marked rows leave the tree with their directory"
+    );
+    assert_eq!(
+        selected_path(&app),
+        "z.rs",
+        "the selection cannot stay on a row that no longer exists"
+    );
+}
+
+#[test]
+fn should_not_mark_a_directory_whose_files_are_all_filtered_out() {
+    let mut app = app_with(&["src/a.rs", "docs/b.md"]);
+    // `src/a.rs` is filtered out: the directory has nothing to mark.
+    apply(&mut app, FileTreePrompt::Include, r"^docs/");
+
+    app.toggle_reviewed_for_directory("src");
+
+    assert!(reviewed_paths(&app).is_empty());
+}
