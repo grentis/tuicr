@@ -67,7 +67,7 @@ fn get_staged_diff_once(
     highlighter: &SyntaxHighlighter,
 ) -> Result<Vec<DiffFile>> {
     let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
-    let index = repo.index()?;
+    let index = fresh_index(repo)?;
     let mut opts = diff_options(comparison);
 
     let diff = repo.diff_tree_to_index(head.as_ref(), Some(&index), Some(&mut opts))?;
@@ -84,6 +84,15 @@ fn get_staged_diff_once(
     Ok(files)
 }
 
+/// The index, re-read if it changed on disk. `Repository::index` returns a
+/// cached copy, so after a `git commit` a long-lived handle would show the
+/// just-committed changes as still staged.
+pub(crate) fn fresh_index(repo: &Repository) -> Result<git2::Index> {
+    let mut index = repo.index()?;
+    index.read(false)?;
+    Ok(index)
+}
+
 /// Get the unstaged diff (working tree vs index)
 /// List the changed paths for either the staged or unstaged diff, without
 /// materializing hunks or running the syntax highlighter. Lets callers verify
@@ -93,12 +102,12 @@ pub fn list_changed_paths(repo: &Repository, kind: ChangeKind) -> Result<Vec<Pat
     let diff = match kind {
         ChangeKind::Staged => {
             let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
-            let index = repo.index()?;
+            let index = fresh_index(repo)?;
             let mut opts = diff_options(WhitespaceComparison::Normal);
             repo.diff_tree_to_index(head.as_ref(), Some(&index), Some(&mut opts))?
         }
         ChangeKind::Unstaged => {
-            let index = repo.index()?;
+            let index = fresh_index(repo)?;
             let mut opts = diff_options(WhitespaceComparison::Normal);
             opts.include_untracked(true);
             // `show_untracked_content(false)` keeps libgit2 from reading each
@@ -139,7 +148,7 @@ fn get_unstaged_diff_once(
     comparison: WhitespaceComparison,
     highlighter: &SyntaxHighlighter,
 ) -> Result<Vec<DiffFile>> {
-    let index = repo.index()?;
+    let index = fresh_index(repo)?;
     let mut opts = diff_options(comparison);
     opts.include_untracked(true);
     opts.show_untracked_content(true);
