@@ -133,6 +133,26 @@ impl App {
         self.should_quit = true;
     }
 
+    /// Whether quitting saves instead of warning about or discarding unsaved
+    /// changes (config `keep_reviewed_on_quit`). Off, a review with only
+    /// reviewed markers is thrown away on `q` (`discard_session_and_quit`).
+    pub fn quit_saves_session(&self) -> bool {
+        self.keep_reviewed_on_quit
+    }
+
+    /// Save, then quit. Stays open with the error shown if the save fails, so
+    /// nothing is lost silently; `:q!` still quits regardless.
+    pub fn save_and_quit(&mut self) {
+        if !self.dirty {
+            self.should_quit = true;
+            return;
+        }
+        match self.save_current_session_merging_external() {
+            Ok(_) => self.should_quit = true,
+            Err(e) => self.set_error(format!("Could not save the review: {e} (:q! quits anyway)")),
+        }
+    }
+
     pub fn save_current_session_merging_external(&mut self) -> Result<PathBuf> {
         let identity = self.session.clone();
         let current = self.session.clone();
