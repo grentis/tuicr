@@ -2277,6 +2277,16 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_branch_base() {
+        let outcome = parse_config("branch_base = \"develop\"\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.branch_base).as_deref(),
+            Some("develop")
+        );
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
     fn should_default_forge_to_none_when_section_missing() {
         let outcome = parse_config("");
         assert_eq!(
