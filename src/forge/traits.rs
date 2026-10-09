@@ -673,6 +673,18 @@ pub trait ForgeBackend {
         Ok(Vec::new())
     }
 
+    /// Post a comment on the PR conversation, as the page's comment box does,
+    /// so bots see it. Returns the comment as stored.
+    fn create_pull_request_comment(
+        &self,
+        _pr: &PullRequestDetails,
+        _body: &str,
+    ) -> Result<PullRequestIssueComment> {
+        Err(crate::error::TuicrError::UnsupportedOperation(
+            "Posting PR comments is not supported for this forge".into(),
+        ))
+    }
+
     /// Create a review on the PR. The payload-building details (event field
     /// mapping, comment serialization) are the backend's responsibility — the
     /// caller only supplies the high-level inputs. Returns a minimal response
