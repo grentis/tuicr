@@ -643,6 +643,7 @@ impl App {
             jump_to_next_unreviewed: false,
             comment_threads: false,
             last_marked_reviewed: None,
+            keep_reviewed_on_quit: false,
             commit_selection_start: CommitSelectionStart::default(),
             initial_comments_visibility: None,
             commit_diff_cache: HashMap::new(),

@@ -338,6 +338,11 @@ fn main() -> anyhow::Result<()> {
         // The diff was laid out before the style was known.
         app.rebuild_annotations();
     }
+    app.keep_reviewed_on_quit = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.keep_reviewed_on_quit)
+        .unwrap_or(false);
     app.commit_selection_start = commit_selection;
     app.pending_start_line = cli_args.start_line;
 
