@@ -699,6 +699,7 @@ mod tests {
         assert_roundtrip("agavra/tuicr@main/unstaged/abc1234");
         assert_roundtrip("agavra/tuicr@feature-login/staged-and-unstaged/abc1234");
         assert_roundtrip("agavra/tuicr@main/pristine");
+        assert_roundtrip("agavra/tuicr@main/branch");
         assert_roundtrip("agavra/tuicr@~abc1234/worktree/abc1234");
         assert_roundtrip("agavra/tuicr@main/commits/abc1234..def5678");
         assert_roundtrip("agavra/tuicr@main/worktree-and-commits/abc1234..def5678");
@@ -1040,6 +1041,30 @@ mod tests {
         assert_ne!(before.to_string(), after.to_string());
         assert_eq!(before.to_string(), "agavra/tuicr@main/worktree/abcdef0");
         assert_eq!(after.to_string(), "agavra/tuicr@main/worktree/9999999");
+    }
+
+    #[test]
+    fn should_keep_branch_slug_when_head_and_range_change() {
+        // A `--branch` session survives commits: no HEAD or range in it.
+        let build = |head: &str, range: &[String]| {
+            build_local_slug(
+                (Some("agavra".to_string()), "tuicr".to_string()),
+                Some("feature/login"),
+                head,
+                SessionDiffSource::Branch,
+                Some(range),
+            )
+            .unwrap()
+            .to_string()
+        };
+        let before = build("abcdef0123", &["abcdef0123".to_string()]);
+        let after = build(
+            "9999999aaa",
+            &["abcdef0123".to_string(), "9999999aaa".to_string()],
+        );
+        assert_eq!(before, "agavra/tuicr@feature-login/branch");
+        assert_eq!(before, after);
+        assert_roundtrip(&before);
     }
 
     #[test]

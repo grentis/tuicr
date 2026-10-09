@@ -353,3 +353,61 @@ impl App {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::branch_base_from;
+
+    /// A fake git answering only the commands in `answers`.
+    fn git(answers: &[(&str, &str)]) -> impl Fn(&[&str]) -> Option<String> {
+        let answers: Vec<(String, String)> = answers
+            .iter()
+            .map(|(cmd, out)| (cmd.to_string(), out.to_string()))
+            .collect();
+        move |args: &[&str]| {
+            let cmd = args.join(" ");
+            answers
+                .iter()
+                .find(|(c, _)| *c == cmd)
+                .map(|(_, out)| out.clone())
+        }
+    }
+
+    const REPO_BASE: &str = "config --get tuicr.branchBase";
+    const ORIGIN_HEAD: &str = "symbolic-ref --quiet --short refs/remotes/origin/HEAD";
+    const LOCAL_MAIN: &str = "rev-parse --verify --quiet refs/heads/main";
+
+    #[test]
+    fn should_prefer_the_repos_git_config_over_the_tuicr_config() {
+        let git = git(&[(REPO_BASE, "develop"), (ORIGIN_HEAD, "origin/main")]);
+
+        assert_eq!(branch_base_from(Some("trunk"), git), "develop");
+    }
+
+    #[test]
+    fn should_take_the_tuicr_config_before_guessing() {
+        let git = git(&[(ORIGIN_HEAD, "origin/main")]);
+
+        assert_eq!(branch_base_from(Some("trunk"), git), "trunk");
+    }
+
+    #[test]
+    fn should_follow_origin_head_without_any_config() {
+        let git = git(&[(ORIGIN_HEAD, "origin/develop"), (LOCAL_MAIN, "abc")]);
+
+        assert_eq!(branch_base_from(None, git), "develop");
+    }
+
+    #[test]
+    fn should_fall_back_to_main_then_master() {
+        assert_eq!(branch_base_from(None, git(&[(LOCAL_MAIN, "abc")])), "main");
+        assert_eq!(branch_base_from(None, git(&[])), "master");
+    }
+
+    #[test]
+    fn should_ignore_an_empty_base() {
+        let git = git(&[(REPO_BASE, ""), (LOCAL_MAIN, "abc")]);
+
+        assert_eq!(branch_base_from(Some(""), git), "main");
+    }
+}

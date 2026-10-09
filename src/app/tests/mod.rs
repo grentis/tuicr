@@ -1,3 +1,4 @@
+mod branch_review_tests;
 mod change_status_tests;
 mod comment_navigation_tests;
 mod commit_scoped_comment_tests;

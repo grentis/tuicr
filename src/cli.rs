@@ -717,6 +717,25 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_branch_with_and_without_base() {
+        let bare = parse_for_test(&["tuicr", "-b"]).expect("parse should succeed");
+        assert_eq!(bare.branch.as_deref(), Some(""));
+
+        let based =
+            parse_for_test(&["tuicr", "--branch", "develop"]).expect("parse should succeed");
+        assert_eq!(based.branch.as_deref(), Some("develop"));
+
+        let unset = parse_for_test(&["tuicr"]).expect("parse should succeed");
+        assert_eq!(unset.branch, None);
+    }
+
+    #[test]
+    fn should_reject_branch_with_revisions_or_working_tree() {
+        assert!(parse_for_test(&["tuicr", "-b", "-r", "HEAD~1..HEAD"]).is_err());
+        assert!(parse_for_test(&["tuicr", "-b", "-w"]).is_err());
+    }
+
+    #[test]
     fn should_default_working_tree_to_false() {
         let parsed = parse_for_test(&["tuicr"]).expect("parse should succeed");
         assert!(!parsed.working_tree);
