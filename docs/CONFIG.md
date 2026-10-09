@@ -280,7 +280,7 @@ comment_type_prefix = false
 | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `comment_type_prefix` | `true`  | Prepend `[TYPE] ` to comment bodies on submit (e.g. `[ISSUE] Magic number should be a constant`). The tag uses the type's `label`, uppercased — the same text the TUI badge and export show. Set to `false` to send the raw comment body without a classification tag. |
 | `sync_viewed`         | `false` | Keep `r` (toggle file reviewed) and GitHub's per-file **Viewed** checkbox in step while reviewing a pull request, in both directions. GitHub only; see [Viewed state](#viewed-state). |
-| `extended_comments`   | `false` | Extra comment features for pull requests: typing `@` in a comment suggests people to mention. See [Mentioning people](KEYBINDINGS.md#mentioning-people). |
+| `extended_comments`   | `false` | Extra comment features for pull requests: typing `@` in a comment suggests people to mention (see [Mentioning people](KEYBINDINGS.md#mentioning-people)), and `<leader>C` posts a comment to the PR conversation. |
 
 When enabled (the default), submitted comments look like:
 

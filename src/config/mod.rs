@@ -75,8 +75,8 @@ pub struct ForgeConfig {
     /// Keep `r` and GitHub's per-file "Viewed" checkbox in step on a pull
     /// request. Off by default: it writes to GitHub as you.
     pub sync_viewed: bool,
-    /// Extra comment features for pull requests: `@` mention suggestions
-    /// while commenting. Off by default.
+    /// Extra comment features for pull requests: `@` mention suggestions and
+    /// `<leader>C` conversation comments. Off by default.
     pub extended_comments: bool,
 }
 

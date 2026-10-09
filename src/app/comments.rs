@@ -973,6 +973,7 @@ impl App {
         self.comment_cursor = 0;
         self.comment_type = self.default_comment_type();
         self.comment_is_review_level = true;
+        self.comment_is_pr_comment = false;
         self.comment_is_file_level = false;
         self.comment_line = None;
         self.comment_line_range = None;
@@ -992,6 +993,7 @@ impl App {
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
         self.comment_is_review_level = false;
+        self.comment_is_pr_comment = false;
         self.editing_comment_id = None;
         self.comment_line_range = None;
     }
@@ -1003,6 +1005,13 @@ impl App {
         }
 
         let content = self.comment_buffer.trim().to_string();
+
+        // Posted now, never stored.
+        if self.comment_is_pr_comment {
+            self.exit_comment_mode();
+            self.post_pr_comment(content);
+            return;
+        }
 
         let mut message = "Error: Could not save comment".to_string();
         let mut autosave_error = None;
@@ -1119,6 +1128,10 @@ impl App {
     }
 
     pub fn cycle_comment_type(&mut self) {
+        if self.comment_is_pr_comment {
+            self.set_message("PR comments are posted as typed, with no type");
+            return;
+        }
         if self.comment_types.is_empty() {
             return;
         }
@@ -1140,6 +1153,10 @@ impl App {
     }
 
     pub fn cycle_comment_type_reverse(&mut self) {
+        if self.comment_is_pr_comment {
+            self.set_message("PR comments are posted as typed, with no type");
+            return;
+        }
         if self.comment_types.is_empty() {
             return;
         }

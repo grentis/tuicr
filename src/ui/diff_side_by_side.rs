@@ -591,7 +591,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
     if is_review_comment_mode && app.editing_comment_id.is_none() {
         let (input_lines, cursor_info) = comment_panel::format_comment_input_lines(
             &app.theme,
-            comment_type_presentation(app, &app.comment_type),
+            crate::ui::diff_view::review_input_presentation(app),
             &app.comment_buffer,
             app.comment_cursor,
             None,

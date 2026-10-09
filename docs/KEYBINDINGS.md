@@ -175,7 +175,8 @@ Shown below the file tree when local comments or visible remote PR threads exist
 | `R` | Toggle hunk reviewed |
 | `c` | Add line comment (or file comment if not on a diff line) |
 | `C` | Add file comment |
-| `<leader>c` | Add review comment |
+| `<leader>c` | Add review comment (sent as the review body on `:submit`) |
+| `<leader>C` | Post a PR conversation comment now, verbatim, as GitHub's comment box does, so comment-command bots see it (GitHub, `[forge] extended_comments`) |
 | `v` / `V` | Enter visual mode for range comments |
 | `dd` | Delete comment at cursor |
 | `i` | Edit comment at cursor (vim: text cursor at start) |
