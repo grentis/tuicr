@@ -473,7 +473,11 @@ fn handle_copy_comment_at_cursor(app: &mut App) {
 /// Otherwise, exports to clipboard and quits.
 pub fn handle_export_and_quit(app: &mut App) {
     handle_export(app);
-    app.should_quit = true;
+    if app.quit_saves_session() {
+        app.save_and_quit();
+    } else {
+        app.should_quit = true;
+    }
 }
 
 fn comment_line_start(buffer: &str, cursor: usize) -> usize {
@@ -848,7 +852,9 @@ impl CompletionResult {
 fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
     match kind {
         CommandKind::Quit => {
-            if app.dirty && app.session.has_comments() {
+            if app.quit_saves_session() {
+                app.save_and_quit();
+            } else if app.dirty && app.session.has_comments() {
                 app.set_error("No write since last change (add ! to override)");
             } else if app.dirty {
                 // Dirty from reviewed-file markers only: discard the state and
@@ -1766,7 +1772,9 @@ fn handle_shared_normal_action(app: &mut App, action: Action) {
 
     match action {
         Action::Quit => {
-            if app.dirty && app.session.has_comments() && !app.quit_warned {
+            if app.quit_saves_session() {
+                app.save_and_quit();
+            } else if app.dirty && app.session.has_comments() && !app.quit_warned {
                 app.set_sticky_warning("Unsaved changes. Press q again to quit.");
                 app.quit_warned = true;
             } else if app.dirty && !app.session.has_comments() {

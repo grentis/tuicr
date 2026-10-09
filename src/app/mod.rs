@@ -1571,6 +1571,9 @@ pub struct App {
     pub comment_threads: bool,
     /// The file the last moving `r` marked, for `Ctrl-o` to go back to.
     pub last_marked_reviewed: Option<PathBuf>,
+    /// Config `keep_reviewed_on_quit`: `q` / `:q` / `ZZ` save the session
+    /// instead of discarding reviewed-only state (or warning about it).
+    pub keep_reviewed_on_quit: bool,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;

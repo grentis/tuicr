@@ -249,6 +249,10 @@ pub struct AppConfig {
     /// How comments are drawn: `boxes` (each its own box, the default) or
     /// `threads` (one box per thread, as forge threads are drawn).
     pub comment_style: Option<String>,
+    /// Save the session when quitting, so files marked reviewed persist even
+    /// in a review with no comments. Defaults to false, where quitting with
+    /// only reviewed markers discards them for a clean slate on reopen.
+    pub keep_reviewed_on_quit: Option<bool>,
     /// `[forge]` section settings. Always present; `None` means "no override"
     /// and downstream code should treat it as `ForgeConfig::default()`.
     pub forge: Option<ForgeConfig>,
@@ -317,6 +321,7 @@ const KNOWN_KEYS: &[&str] = &[
     "list_comment_replies",
     "jump_to_next_unreviewed",
     "comment_style",
+    "keep_reviewed_on_quit",
     "forge",
     "export",
 ];
@@ -672,6 +677,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         list_comment_replies: read_bool(table, "list_comment_replies", &mut warnings),
         jump_to_next_unreviewed: read_bool(table, "jump_to_next_unreviewed", &mut warnings),
         comment_style: read_enum(table, "comment_style", &["boxes", "threads"], &mut warnings),
+        keep_reviewed_on_quit: read_bool(table, "keep_reviewed_on_quit", &mut warnings),
         forge: table
             .get("forge")
             .and_then(|v| parse_forge(v, &mut warnings)),
