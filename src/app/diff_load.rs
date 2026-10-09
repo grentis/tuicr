@@ -831,6 +831,16 @@ impl App {
     /// Reloads diff files from disk. Returns `(file_count, invalidated_count)` where
     /// `invalidated_count` is the number of previously reviewed files whose content changed.
     pub fn reload_diff_files(&mut self) -> Result<(usize, usize)> {
+        if self.branch_base().is_some() {
+            // New commits change the range: re-resolve it first. An emptied
+            // branch reloads empty rather than failing.
+            self.refresh_branch_target(true)?;
+            let diff_files = match self.fetch_diff_files() {
+                Err(TuicrError::NoChanges) => Vec::new(),
+                other => other?,
+            };
+            return Ok(self.apply_diff_files(diff_files));
+        }
         let diff_files = self.fetch_diff_files()?;
         let full_reload = !Self::is_strict_commit_selection(
             self.commit_selection_range,
@@ -1083,6 +1093,16 @@ impl App {
     /// `diff_watch_result_is_stale`'s comparison against `self.diff_source`
     /// still matches on landing.
     fn spawn_diff_watch_reload(&mut self) {
+        // Re-resolve a branch range on the main thread (one revwalk) so the
+        // worker sees new commits.
+        let branch_mode = self.branch_base().is_some();
+        if branch_mode && let Err(e) = self.refresh_branch_target(false) {
+            let text = format!("Branch refresh failed: {e}");
+            if self.last_diff_watch_error.as_deref() != Some(text.as_str()) {
+                self.last_diff_watch_error = Some(text.clone());
+                self.set_warning(text);
+            }
+        }
         let request = DiffWatchReloadRequest {
             diff_source: self.diff_source.clone(),
             commit_selection_range: self.commit_selection_range,
@@ -1108,6 +1128,7 @@ impl App {
                 path_filter.as_deref(),
                 &highlighter,
                 current,
+                !branch_mode,
             );
             match outcome {
                 Ok(fetched) => reporter.answer(
@@ -1124,6 +1145,9 @@ impl App {
     /// cross the thread boundary, then runs the same
     /// `changed_diff_files_for_source` gate the main thread uses. `current`
     /// is the fingerprint of what was on screen when the fetch was spawned.
+    ///
+    /// `fetch_history` is false for a branch review: its pane holds the
+    /// branch's commits, kept current by `refresh_branch_target`.
     fn diff_watch_fetch(
         vcs_open_options: VcsOpenOptions,
         request: &DiffWatchReloadRequest,
@@ -1131,6 +1155,7 @@ impl App {
         path_filter: Option<&str>,
         highlighter: &SyntaxHighlighter,
         current: u64,
+        fetch_history: bool,
     ) -> Result<DiffWatchFetched> {
         let vcs = detect_vcs(
             vcs_open_options.git_backend_preference,
@@ -1159,7 +1184,7 @@ impl App {
         // would replace a current diff with a warning. The cost is that a
         // commit fetch failing over and over stays silent. The pane just stops
         // updating, which is how it behaved before this feature.
-        let commits = Self::pane_tracks_history(&request.diff_source)
+        let commits = (fetch_history && Self::pane_tracks_history(&request.diff_source))
             .then(|| vcs.get_recent_commits(0, VISIBLE_COMMIT_COUNT).ok())
             .flatten();
         // Same treatment, and for the same reason: staging a file leaves the
@@ -1361,7 +1386,7 @@ impl App {
     /// `reanchored_commit_selection`. It arrives as a parameter rather than
     /// being recomputed here, so the answer and the rows it indexes into come
     /// from the same comparison rather than two readings of the list.
-    fn install_refreshed_commit_pane(
+    pub(in crate::app) fn install_refreshed_commit_pane(
         &mut self,
         rows: Vec<CommitInfo>,
         range: Option<(usize, usize)>,
@@ -1427,7 +1452,7 @@ impl App {
     /// builds unstaged first (`src/app/commits.rs`). Re-deriving the order
     /// here would reorder the pane under whichever half of them the user
     /// opened from, so a tick only ever adds and removes.
-    fn commit_pane_rows(
+    pub(in crate::app) fn commit_pane_rows(
         current: &[CommitInfo],
         fetched: Vec<CommitInfo>,
         status: Option<VcsChangeStatus>,
@@ -1900,6 +1925,7 @@ mod tests {
             diff_whitespace_mode: mode.clone(),
             commit_selection: CommitSelectionStart::All,
             pr_target: None,
+            branch_base: None,
             repo_url_override: None,
         };
         let captured = options.vcs_open_options();

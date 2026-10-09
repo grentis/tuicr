@@ -510,6 +510,22 @@ impl App {
                 self.set_message("Restart tuicr with --file <path> to open this review.");
                 return Ok(());
             }
+            // A branch session reopens as a branch review, re-resolving its
+            // range; only on its own branch.
+            SessionDiffSource::Branch => {
+                let Some(base) = session.branch_base.clone() else {
+                    self.set_error("Can't restore this review: it has no saved base.".to_string());
+                    return Ok(());
+                };
+                if session.branch_name != self.vcs_info.branch_name {
+                    let branch = session.branch_name.as_deref().unwrap_or("its branch");
+                    self.set_error(format!(
+                        "This review belongs to {branch}. Switch to it and try again."
+                    ));
+                    return Ok(());
+                }
+                self.load_branch_selection(&base)
+            }
             // A PR review is fetched, not read from the checkout. The session
             // records the forge repository and number, so resume can reuse the
             // Pull Requests tab's open path instead of sending the user there.

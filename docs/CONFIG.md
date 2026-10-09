@@ -59,6 +59,7 @@ list_comment_replies = false
 jump_to_next_unreviewed = false
 comment_style = "boxes"
 keep_reviewed_on_quit = false
+# branch_base = "main"
 diff_watch_interval_ms = 0
 
 backend = "libgit2"
@@ -129,6 +130,7 @@ session_header = true
 | `single_file_view`         | `false`      | Start in single-file view for supported review targets. Pristine `--all-files` mode always starts in single-file view.                                     |
 | `username`                 | `"user"`     | Display name stamped on local comments and used as the viewer identity for local comment coloring. With `[forge] extended_comments` and no `username`, it is git's `user.name`, and `"user"` when that is not set. |
 | `keep_reviewed_on_quit`    | `false`      | Save the session when quitting with `q`, `:q` or `ZZ`, so files marked reviewed persist even when the review has no comments. `false` keeps the default: quitting with only reviewed markers discards them, and unsaved comments warn first. `:q!` never saves. |
+| `branch_base`              | origin/HEAD's branch, else `main`, else `master` | Base a bare `--branch` / `-b` compares the current branch against (merge-base to working tree), unless the repo's `tuicr.branchBase` git config names one. Falls back to `origin/<base>` when the base is not a local branch. `-b <base>` overrides it per run. |
 | `diff_watch_interval_ms`   | `0`          | Poll interval for re-reading the local diff so uncommitted changes show without `:e`. The same tick refreshes the commit pane, including the "Staged changes" and "Unstaged changes" rows. A commit-range review, from `-r` or picked in the commit selector, keeps its range in the pane. With `-w` it refreshes only those two rows. Without it the pane never gains them. `0` (default) disables it. Ignored for PR and `--all-files` reviews. |
 | `click_toggles_folders`    | `true`       | Expand or collapse a folder in the file tree when it is clicked. `false` makes the click only select the folder, leaving `Enter` to toggle it. |
 | `list_reviewed_file_comments` | `false`      | List the comments and threads of files marked reviewed in the comment navigator too. Reviewed files collapse to their header in the diff, and by default their comments leave the list with them. With `true` they stay listed, dimmed, and `Enter` opens the file at the comment without unmarking it. |

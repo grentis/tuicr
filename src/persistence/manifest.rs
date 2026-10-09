@@ -269,6 +269,7 @@ pub fn diff_source_label(diff_source: SessionDiffSource) -> &'static str {
         SessionDiffSource::StagedUnstagedAndCommits => "staged-and-unstaged-and-commits",
         SessionDiffSource::PullRequest => "pr",
         SessionDiffSource::Pristine => "pristine",
+        SessionDiffSource::Branch => "branch",
     }
 }
 

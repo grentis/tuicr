@@ -1077,6 +1077,7 @@ pub struct ViewedSyncWorker {
     pub tx: std::sync::mpsc::Sender<ViewedSyncRequest>,
 }
 
+pub use branch::default_branch_base;
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
 pub use thread_reply::ThreadReplyTarget;
 
@@ -2013,6 +2014,9 @@ pub struct AppStartupOptions<'a> {
     /// `ForgeRepository`. When `Some`, the canonical resolver short-circuits
     /// the `gh api` parent lookup and uses this value directly.
     pub repo_url_override: Option<ForgeRepository>,
+    /// `--branch` base, already resolved. `Some` reviews the whole current
+    /// branch in one session per branch.
+    pub branch_base: Option<&'a str>,
 }
 
 impl AppStartupOptions<'_> {
@@ -2027,6 +2031,7 @@ impl AppStartupOptions<'_> {
 }
 
 mod annotations;
+mod branch;
 mod coloring;
 mod comment_style;
 mod comment_vim;

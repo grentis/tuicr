@@ -80,6 +80,8 @@ tuicr tui                   # Same TUI, explicit subcommand
 tuicr -w                    # Uncommitted changes (skip selector)
 tuicr -r main..HEAD         # Commit range
 tuicr --file f.md --line 42 # Annotate a file, starting at line 42
+tuicr -b                    # Whole branch vs its base: commits + uncommitted, one session per branch
+tuicr -b develop            # Same, against another base
 tuicr pr 125                # GitHub, Gitea, Bitbucket, or Azure DevOps PR, or Gerrit change
 tuicr pr 125 --remote up    # Use a named Git remote's fetch URL
 tuicr mr 125                # GitLab MR

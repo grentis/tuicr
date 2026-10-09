@@ -101,8 +101,12 @@ fn main() -> anyhow::Result<()> {
         false
     };
 
-    // --path implies --working-tree unless -r is explicitly provided
-    if cli_args.path_filter.is_some() && !cli_args.working_tree && cli_args.revisions.is_none() {
+    // --path implies --working-tree unless -r or --branch is explicitly provided
+    if cli_args.path_filter.is_some()
+        && !cli_args.working_tree
+        && cli_args.revisions.is_none()
+        && cli_args.branch.is_none()
+    {
         cli_args.working_tree = true;
     }
     let mut startup_warnings = Vec::new();
@@ -228,6 +232,17 @@ fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
+    // A bare `--branch`: see `default_branch_base`.
+    let branch_base = cli_args.branch.as_deref().map(|base| match base {
+        "" => app::default_branch_base(
+            config_outcome
+                .config
+                .as_ref()
+                .and_then(|cfg| cfg.branch_base.as_deref()),
+        ),
+        base => base.to_string(),
+    });
+
     let mut app = match profile::time("startup.app_init", || {
         App::new(
             theme,
@@ -239,6 +254,7 @@ fn main() -> anyhow::Result<()> {
             AppStartupOptions {
                 revisions: cli_args.revisions.as_deref(),
                 working_tree: cli_args.working_tree,
+                branch_base: branch_base.as_deref(),
                 path_filter: cli_args.path_filter.as_deref(),
                 file_path: cli_args.file_path.as_deref(),
                 all_files: cli_args.all_files,

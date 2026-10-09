@@ -134,6 +134,10 @@ pub enum SessionDiffSource {
     /// `base_commit` for these sessions starts with `"pristine:"` so the
     /// reload path can match by prefix instead of exact HEAD.
     Pristine,
+    /// `--branch`: everything since the branch left its base, up to the
+    /// working tree. Keyed by branch name alone; the range is re-resolved
+    /// from `ReviewSession::branch_base` on every open and reload.
+    Branch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +168,9 @@ pub struct ReviewSession {
     /// without this field deserialize as `None`.
     #[serde(default)]
     pub commit_selection_range: Option<(usize, usize)>,
+    /// Base a `Branch` session compares against; `None` otherwise.
+    #[serde(default)]
+    pub branch_base: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
@@ -195,6 +202,7 @@ impl ReviewSession {
             pr_session_key: None,
             remote_comments_visibility: PrCommentsVisibility::default(),
             commit_selection_range: None,
+            branch_base: None,
             created_at: now,
             updated_at: now,
             review_comments: Vec::new(),
