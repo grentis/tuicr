@@ -585,6 +585,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                format!("  {leader}C        "),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Post PR conversation comment now ([forge] extended_comments)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  i         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),

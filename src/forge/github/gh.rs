@@ -10,7 +10,7 @@ use crate::forge::remote_comments::{RemoteReviewSummary, RemoteReviewThread};
 use crate::forge::traits::{
     ForgeBackend, ForgeFileLinesRequest, ForgeRepository, GhCreateReviewResponse,
     PagedPullRequests, PullRequestCommit, PullRequestDetails, PullRequestInfo,
-    PullRequestListQuery, PullRequestListScope, PullRequestTarget,
+    PullRequestIssueComment, PullRequestListQuery, PullRequestListScope, PullRequestTarget,
 };
 use crate::model::{DiffLine, FilePatch};
 use crate::process::{
@@ -692,6 +692,40 @@ where
 
         parse_create_review_response(&output)
     }
+
+    fn create_pull_request_comment(
+        &self,
+        pr: &PullRequestDetails,
+        body: &str,
+    ) -> Result<PullRequestIssueComment> {
+        // To the REST API a PR is an issue: conversation comments live
+        // under `issues/`.
+        let endpoint = format!(
+            "repos/{}/{}/issues/{}/comments",
+            pr.repository.owner, pr.repository.name, pr.number,
+        );
+        let mut args = vec![
+            "api".to_string(),
+            endpoint,
+            "--method".to_string(),
+            "POST".to_string(),
+            "--input".to_string(),
+            "-".to_string(),
+        ];
+        if pr.repository.host != DEFAULT_GITHUB_HOST {
+            args.push("--hostname".to_string());
+            args.push(pr.repository.host.clone());
+        }
+        // JSON on stdin keeps the text verbatim: `-f body=@x` reads a file.
+        let payload = serde_json::json!({ "body": body }).to_string();
+
+        let output = self
+            .runner
+            .run_with_stdin(&args, &payload)
+            .map_err(|err| map_gh_error(err, &pr.repository.host))?;
+
+        parse_issue_comment_response(&output)
+    }
 }
 
 impl<R> GitHubGhBackend<R>
@@ -1145,6 +1179,34 @@ fn map_create_review_error(error: GhCommandError, host: &str) -> TuicrError {
         }
     }
     map_gh_error(error, host)
+}
+
+/// Parse the GitHub `issues/<n>/comments` response as the conversation shows it.
+fn parse_issue_comment_response(output: &str) -> Result<PullRequestIssueComment> {
+    let value: serde_json::Value = serde_json::from_str(output)?;
+    let body = value
+        .get("body")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| TuicrError::Forge("Issue-comment response missing `body`".to_string()))?
+        .to_string();
+    let author = value
+        .pointer("/user/login")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let url = value
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let created_at = value
+        .get("created_at")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+    Ok(PullRequestIssueComment {
+        author,
+        body,
+        url,
+        created_at,
+    })
 }
 
 /// Parse the GitHub `pulls/<n>/reviews` response into our minimal shape.

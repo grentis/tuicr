@@ -429,6 +429,16 @@ pub(super) fn comment_type_presentation(
     }
 }
 
+/// Badge for the review input box: the comment type, or `PR COMMENT` for
+/// `<leader>C`, which has none.
+pub(super) fn review_input_presentation(app: &App) -> comment_panel::CommentTypePresentation {
+    let mut presentation = comment_type_presentation(app, &app.comment_type);
+    if app.comment_is_pr_comment {
+        presentation.label = "PR COMMENT".to_string();
+    }
+    presentation
+}
+
 /// Adjust scroll_offset so the comment input box is visible in the viewport.
 ///
 /// The input box is rendered inline in the diff view, so without this

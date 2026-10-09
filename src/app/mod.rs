@@ -1064,6 +1064,18 @@ pub struct ViewedSyncWorker {
 
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
 
+/// Outcome of posting a PR conversation comment.
+#[derive(Debug)]
+pub enum PrCommentEvent {
+    Done {
+        /// PR the comment went to; shown only if it is still open.
+        key: crate::forge::traits::PrSessionKey,
+        /// On failure, the error and the unsent text.
+        result:
+            std::result::Result<crate::forge::traits::PullRequestIssueComment, (String, String)>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffViewMode {
     Unified,
@@ -1263,6 +1275,8 @@ pub struct App {
     pub comment_type: CommentType,
     pub comment_types: Vec<CommentTypeDefinition>,
     pub comment_is_review_level: bool,
+    /// `<leader>C`: post to the PR conversation instead of the review.
+    pub comment_is_pr_comment: bool,
     pub comment_is_file_level: bool,
     pub comment_line: Option<(u32, LineSide)>,
     pub editing_comment_id: Option<String>,
@@ -1357,6 +1371,10 @@ pub struct App {
     pub mention: Option<MentionState>,
     /// Forge lookups behind that list, reset when a PR opens.
     pub mention_lookup: MentionLookup,
+    /// The `<leader>C` post in flight; `Some` blocks another.
+    pub pr_comment_rx: Option<std::sync::mpsc::Receiver<PrCommentEvent>>,
+    /// Text of a failed post, which the next `<leader>C` opens with.
+    pub pr_comment_unsent: Option<String>,
     /// PR session whose viewed state was already read (once per session).
     pub viewed_seeded: Option<crate::forge::traits::PrSessionKey>,
     /// That read while it is in flight.
@@ -1975,6 +1993,7 @@ mod mentions;
 mod modes;
 mod navigation;
 mod pr;
+mod pr_comment;
 mod reviewed;
 mod search;
 mod session;

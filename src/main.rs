@@ -475,6 +475,7 @@ fn main() -> anyhow::Result<()> {
         needs_redraw |= app.poll_editor_launches();
         needs_redraw |= app.poll_viewed_sync_events();
         needs_redraw |= app.poll_mention_events();
+        needs_redraw |= app.poll_pr_comment_events();
         needs_redraw |= app.poll_persisted_session_changes();
         needs_redraw |= app.poll_diff_watch_changes();
         needs_redraw |= pr_pending;
@@ -698,6 +699,10 @@ fn main() -> anyhow::Result<()> {
                             }
                             crossterm::event::KeyCode::Char('c') => {
                                 app.enter_review_comment_mode();
+                                continue;
+                            }
+                            crossterm::event::KeyCode::Char('C') => {
+                                app.enter_pr_comment_mode();
                                 continue;
                             }
                             // `<leader>s` toggles the commit selector pane.
