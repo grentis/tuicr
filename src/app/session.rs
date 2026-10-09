@@ -529,6 +529,39 @@ impl App {
         session
     }
 
+    /// Load or create the branch's `--branch` session, keyed by the branch
+    /// alone; `commit_ids` only refreshes what it records.
+    pub(in crate::app) fn load_or_create_branch_session(
+        vcs_info: &VcsInfo,
+        base: &str,
+        commit_ids: &[String],
+    ) -> ReviewSession {
+        let loaded = load_latest_session_for_context(
+            &vcs_info.root_path,
+            vcs_info.branch_name.as_deref(),
+            &vcs_info.head_commit,
+            SessionDiffSource::Branch,
+            None,
+        )
+        .ok()
+        .flatten()
+        .map(|(_path, session)| session);
+
+        let mut session = loaded.unwrap_or_else(|| {
+            ReviewSession::new(
+                vcs_info.root_path.clone(),
+                vcs_info.head_commit.clone(),
+                vcs_info.branch_name.clone(),
+                SessionDiffSource::Branch,
+            )
+        });
+        session.branch_base = Some(base.to_string());
+        session.base_commit = vcs_info.head_commit.clone();
+        session.commit_range = (!commit_ids.is_empty()).then(|| commit_ids.to_vec());
+        Self::untag_rewritten_commit_comments(&mut session, commit_ids);
+        session
+    }
+
     pub(in crate::app) fn load_or_create_session(
         vcs_info: &VcsInfo,
         diff_source: SessionDiffSource,

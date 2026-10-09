@@ -26,6 +26,8 @@
 //! `staged-and-unstaged`) embed the short SHA of the current HEAD so that a
 //! new commit on the same branch produces a fresh session instead of
 //! resurrecting stale comments tied to the previous HEAD.
+//!
+//! `branch` (`--branch`) carries no SHA on purpose: one branch, one session.
 #![allow(dead_code)]
 
 use std::fmt;
@@ -84,6 +86,8 @@ pub enum SlugSource {
     Commits(CommitRange),
     WorktreeAndCommits(CommitRange),
     StagedUnstagedAndCommits(CommitRange),
+    /// Whole-branch review, identified by the branch name alone.
+    Branch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -155,6 +159,7 @@ impl fmt::Display for SlugSource {
             SlugSource::StagedUnstagedAndCommits(r) => {
                 write!(f, "staged-and-unstaged-and-commits/{}..{}", r.base, r.head)
             }
+            SlugSource::Branch => f.write_str("branch"),
         }
     }
 }
@@ -289,6 +294,9 @@ fn parse_source(s: &str) -> Result<SlugSource, SlugParseError> {
     }
     if s == "pristine" {
         return Ok(SlugSource::Pristine);
+    }
+    if s == "branch" {
+        return Ok(SlugSource::Branch);
     }
     if let Some(head) = s.strip_prefix("worktree/") {
         return live_source(head, s, SlugSource::Worktree);
@@ -568,6 +576,7 @@ fn build_source(
         SessionDiffSource::Unstaged => Ok(SlugSource::Unstaged(live_head())),
         SessionDiffSource::StagedAndUnstaged => Ok(SlugSource::StagedAndUnstaged(live_head())),
         SessionDiffSource::Pristine => Ok(SlugSource::Pristine),
+        SessionDiffSource::Branch => Ok(SlugSource::Branch),
         SessionDiffSource::CommitRange => {
             Ok(SlugSource::Commits(range_from(commit_range, diff_source)?))
         }

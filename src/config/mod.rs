@@ -253,6 +253,9 @@ pub struct AppConfig {
     /// in a review with no comments. Defaults to false, where quitting with
     /// only reviewed markers discards them for a clean slate on reopen.
     pub keep_reviewed_on_quit: Option<bool>,
+    /// Base of a bare `--branch`, after the repo's `tuicr.branchBase`;
+    /// unset, `origin/HEAD`'s branch, else `main`, else `master`.
+    pub branch_base: Option<String>,
     /// `[forge]` section settings. Always present; `None` means "no override"
     /// and downstream code should treat it as `ForgeConfig::default()`.
     pub forge: Option<ForgeConfig>,
@@ -322,6 +325,7 @@ const KNOWN_KEYS: &[&str] = &[
     "jump_to_next_unreviewed",
     "comment_style",
     "keep_reviewed_on_quit",
+    "branch_base",
     "forge",
     "export",
 ];
@@ -678,6 +682,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         jump_to_next_unreviewed: read_bool(table, "jump_to_next_unreviewed", &mut warnings),
         comment_style: read_enum(table, "comment_style", &["boxes", "threads"], &mut warnings),
         keep_reviewed_on_quit: read_bool(table, "keep_reviewed_on_quit", &mut warnings),
+        branch_base: read_string(table, "branch_base", &mut warnings),
         forge: table
             .get("forge")
             .and_then(|v| parse_forge(v, &mut warnings)),

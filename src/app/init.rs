@@ -140,6 +140,16 @@ impl App {
                 options.diff_whitespace_mode.clone(),
             )
         })?;
+        if let Some(base) = options.branch_base {
+            return Self::new_branch_review(
+                vcs,
+                theme,
+                comment_type_configs,
+                output_to_stdout,
+                &options,
+                base,
+            );
+        }
         let vcs_info = vcs.info().clone();
         let highlighter =
             crate::profile::time("startup.syntax_highlighter", || theme.syntax_highlighter());
@@ -412,7 +422,10 @@ impl App {
 
     /// Records how `detect_vcs` opened the backend, so the diff-watch worker
     /// can open its own the same way.
-    fn with_vcs_open_options(mut self, vcs_open_options: VcsOpenOptions) -> Self {
+    pub(in crate::app) fn with_vcs_open_options(
+        mut self,
+        vcs_open_options: VcsOpenOptions,
+    ) -> Self {
         self.vcs_open_options = vcs_open_options;
         self
     }
