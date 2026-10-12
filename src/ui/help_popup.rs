@@ -734,6 +734,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :open     ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "Open the PR in the browser (PR mode, also {leader}o)"
+            )),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :wrap     ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),

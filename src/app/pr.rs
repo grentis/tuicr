@@ -1,6 +1,19 @@
 use super::*;
 
 impl App {
+    /// Open the PR in the default browser (`:open`, `<leader>o`).
+    pub fn open_pr_in_browser(&mut self) {
+        let DiffSource::PullRequest(pr) = &self.diff_source else {
+            self.set_warning(":open only applies in PR mode");
+            return;
+        };
+        let url = pr.url.clone();
+        match crate::browser::open_url(&url) {
+            Ok(()) => self.set_message(format!("Opened {url}")),
+            Err(e) => self.set_warning(format!("Failed to open the browser: {e}")),
+        }
+    }
+
     /// Re-enter PR mode after we've already opened a PR via the selector.
     /// Used by the selector → PR open path and by `:reload` in PR mode.
     pub fn enter_pr_diff_mode(

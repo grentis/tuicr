@@ -707,6 +707,10 @@ fn main() -> anyhow::Result<()> {
                                 app.relative_line_numbers = !app.relative_line_numbers;
                                 continue;
                             }
+                            crossterm::event::KeyCode::Char('o') => {
+                                app.open_pr_in_browser();
+                                continue;
+                            }
                             _ => {}
                         }
                         // Otherwise fall through to normal handling
