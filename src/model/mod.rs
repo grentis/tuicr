@@ -4,4 +4,4 @@ pub mod review;
 
 pub use comment::{Comment, CommentType, LineRange, LineSide};
 pub use diff_types::{DiffFile, DiffHunk, DiffLine, FilePatch, FileStatus, LineOrigin};
-pub use review::{ClearScope, ReviewSession, SessionDiffSource};
+pub use review::{ClearScope, FULL_REVIEW_VIEW, ReviewSession, SessionDiffSource};
