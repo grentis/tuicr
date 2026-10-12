@@ -464,7 +464,7 @@ impl App {
         // hunk keys alive until the selected diff is loaded.
         let preserve_hunks = matches!(diff_source, DiffSource::PullRequest(_))
             && session.commit_selection_range.is_some();
-        Self::register_diff_files(&mut session, &diff_files, preserve_hunks);
+        Self::register_diff_files(&mut session, &diff_files, preserve_hunks, FULL_REVIEW_VIEW);
 
         let has_more_commit = commit_list.len() >= VISIBLE_COMMIT_COUNT;
         let visible_commit_count = if commit_list.is_empty() {
@@ -840,12 +840,13 @@ impl App {
         session: &mut ReviewSession,
         diff_files: &[DiffFile],
         preserve_hunks: bool,
+        view: &str,
     ) {
         for file in diff_files {
             if preserve_hunks {
-                session.add_diff_file_preserving_hunks(file);
+                session.add_diff_file_preserving_hunks(file, view);
             } else {
-                session.add_diff_file(file);
+                session.add_diff_file_in_view(file, view);
             }
         }
     }

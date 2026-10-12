@@ -769,8 +769,9 @@ impl App {
         };
 
         let mut invalidated = 0;
+        let view = self.review_view_key();
         for file in &diff_files {
-            if self.session.add_diff_file(file) {
+            if self.session.add_diff_file_in_view(file, &view) {
                 invalidated += 1;
             }
         }
@@ -839,7 +840,9 @@ impl App {
                 Err(TuicrError::NoChanges) => Vec::new(),
                 other => other?,
             };
-            return Ok(self.apply_diff_files(diff_files));
+            let unmarked = self.observe_full_branch_diff()?;
+            let (count, invalidated) = self.apply_diff_files(diff_files);
+            return Ok((count, invalidated + unmarked));
         }
         let diff_files = self.fetch_diff_files()?;
         let full_reload = !Self::is_strict_commit_selection(
@@ -859,6 +862,30 @@ impl App {
                 applied_invalidated
             },
         ))
+    }
+
+    /// With a narrowed selection, check reviewed files against the whole
+    /// branch diff too, where edits outside the selection show, and refresh
+    /// the cached diffs. Returns how many files it unmarked.
+    fn observe_full_branch_diff(&mut self) -> Result<usize> {
+        if !Self::is_strict_commit_selection(self.commit_selection_range, self.review_commits.len())
+        {
+            return Ok(0);
+        }
+        let full = match Self::fetch_diff_files_for_source(
+            self.vcs.as_ref(),
+            &self.vcs_info.root_path,
+            &self.diff_source,
+            self.theme.syntax_highlighter(),
+            self.path_filter.as_deref(),
+        ) {
+            Err(TuicrError::NoChanges) => Vec::new(),
+            other => other?,
+        };
+        let unmarked = self.session.observe_full_view(&full);
+        self.range_diff_files = Some(full);
+        self.commit_diff_cache.clear();
+        Ok(unmarked)
     }
 
     /// Returns the freshly fetched diff only when it differs from what is

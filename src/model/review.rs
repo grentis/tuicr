@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
 use super::comment::{Comment, LineSide};
@@ -41,7 +41,22 @@ pub struct FileReview {
     pub reviewed_hunks: BTreeSet<String>,
     #[serde(default)]
     pub content_hash: Option<u64>,
+    /// The view `content_hash` came from; `None` (the full view) in older
+    /// sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash_view: Option<String>,
+    /// While reviewed, the hash each view showed. A narrowed view's hash
+    /// differs from the full one without any edit, so a mark is only checked
+    /// against the same view.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub reviewed_view_hashes: BTreeMap<String, u64>,
+    /// The hash the full view last showed, where every edit shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_view_hash: Option<u64>,
 }
+
+/// The view of a review with every commit row selected.
+pub const FULL_REVIEW_VIEW: &str = "all";
 
 impl FileReview {
     pub fn new(path: PathBuf, status: FileStatus, content_hash: u64) -> Self {
@@ -53,6 +68,60 @@ impl FileReview {
             line_comments: HashMap::new(),
             reviewed_hunks: BTreeSet::new(),
             content_hash: Some(content_hash),
+            content_hash_view: Some(FULL_REVIEW_VIEW.to_string()),
+            reviewed_view_hashes: BTreeMap::new(),
+            full_view_hash: Some(content_hash),
+        }
+    }
+
+    /// Record the full view's hash. Returns true when that unmarks the file:
+    /// reviewed, and changed since last read (an edit or a new commit).
+    fn observe_full(&mut self, content_hash: u64) -> bool {
+        let previous = self.full_view_hash.replace(content_hash);
+        if !self.reviewed || previous.is_none_or(|previous| previous == content_hash) {
+            return false;
+        }
+        self.reviewed = false;
+        self.reviewed_view_hashes.clear();
+        true
+    }
+
+    /// Record `view`'s hash. Returns true when that unmarks the file: the
+    /// same view showed it differently before (an edit). A view not seen
+    /// since the mark only records its hash, so changing the selection never
+    /// unmarks.
+    fn observe(&mut self, view: &str, content_hash: u64) -> bool {
+        if view == FULL_REVIEW_VIEW && self.observe_full(content_hash) {
+            self.content_hash = Some(content_hash);
+            self.content_hash_view = Some(view.to_string());
+            return true;
+        }
+        let previous = self.content_hash.replace(content_hash);
+        let previous_view = self.content_hash_view.replace(view.to_string());
+        if !self.reviewed {
+            self.reviewed_view_hashes.clear();
+            return false;
+        }
+        // First sighting since the mark: seed it with the hash and view it was
+        // marked in. A mark without a hash (old sessions) is dropped.
+        if self.reviewed_view_hashes.is_empty() {
+            let Some(previous) = previous else {
+                self.reviewed = false;
+                return true;
+            };
+            let marked_in = previous_view.unwrap_or_else(|| FULL_REVIEW_VIEW.to_string());
+            self.reviewed_view_hashes.insert(marked_in, previous);
+        }
+        match self
+            .reviewed_view_hashes
+            .insert(view.to_string(), content_hash)
+        {
+            Some(seen) if seen != content_hash => {
+                self.reviewed = false;
+                self.reviewed_view_hashes.clear();
+                true
+            }
+            _ => false,
         }
     }
 
@@ -180,10 +249,6 @@ pub struct ReviewSession {
 }
 
 impl ReviewSession {
-    fn file_review_is_invalidated(review: &FileReview, content_hash: u64) -> bool {
-        review.reviewed && review.content_hash != Some(content_hash)
-    }
-
     pub fn new(
         repo_path: PathBuf,
         base_commit: String,
@@ -221,25 +286,53 @@ impl ReviewSession {
             .any(|file| file.reviewed || !file.reviewed_hunks.is_empty())
     }
 
-    /// Registers a file in the session. Returns true if the file was previously
-    /// reviewed but its content changed, causing reviewed status to be reset.
+    /// Registers a file as the full view shows it. Returns true when that
+    /// unmarks it.
     pub fn add_file(&mut self, path: PathBuf, status: FileStatus, content_hash: u64) -> bool {
+        self.add_file_in_view(path, status, content_hash, FULL_REVIEW_VIEW)
+    }
+
+    /// Registers a file as `view` shows it. See `FileReview::observe` for
+    /// when that unmarks it.
+    pub fn add_file_in_view(
+        &mut self,
+        path: PathBuf,
+        status: FileStatus,
+        content_hash: u64,
+        view: &str,
+    ) -> bool {
         if let Some(review) = self.files.get_mut(&path) {
-            let invalidated = Self::file_review_is_invalidated(review, content_hash);
-            review.content_hash = Some(content_hash);
-            if invalidated {
-                review.reviewed = false;
-            }
-            return invalidated;
+            return review.observe(view, content_hash);
         }
-        self.files
-            .insert(path.clone(), FileReview::new(path, status, content_hash));
+        let mut review = FileReview::new(path.clone(), status, content_hash);
+        review.content_hash_view = Some(view.to_string());
+        if view != FULL_REVIEW_VIEW {
+            review.full_view_hash = None;
+        }
+        self.files.insert(path, review);
         false
     }
 
+    /// Check reviewed files against the full view while a narrowed one is
+    /// shown. Returns how many it unmarked.
+    pub fn observe_full_view(&mut self, diff_files: &[DiffFile]) -> usize {
+        diff_files
+            .iter()
+            .filter(|file| {
+                self.files
+                    .get_mut(file.display_path())
+                    .is_some_and(|review| review.observe_full(file.content_hash))
+            })
+            .count()
+    }
+
     pub fn add_diff_file(&mut self, file: &DiffFile) -> bool {
+        self.add_diff_file_in_view(file, FULL_REVIEW_VIEW)
+    }
+
+    pub fn add_diff_file_in_view(&mut self, file: &DiffFile, view: &str) -> bool {
         let path = file.display_path().clone();
-        let invalidated = self.add_file(path.clone(), file.status, file.content_hash);
+        let invalidated = self.add_file_in_view(path.clone(), file.status, file.content_hash, view);
         if let Some(review) = self.files.get_mut(&path) {
             let valid_hunks: BTreeSet<_> = file.hunk_review_keys().into_iter().collect();
             review
@@ -259,8 +352,9 @@ impl ReviewSession {
         diff_files
             .iter()
             .filter(|file| {
+                // Registering it in the full view, on a copy.
                 self.files.get(file.display_path()).is_some_and(|review| {
-                    Self::file_review_is_invalidated(review, file.content_hash)
+                    review.clone().observe(FULL_REVIEW_VIEW, file.content_hash)
                 })
             })
             .count()
@@ -268,8 +362,13 @@ impl ReviewSession {
 
     /// Register a transient filtered diff without dropping hunk keys that
     /// belong to the broader persisted review scope.
-    pub fn add_diff_file_preserving_hunks(&mut self, file: &DiffFile) -> bool {
-        self.add_file(file.display_path().clone(), file.status, file.content_hash)
+    pub fn add_diff_file_preserving_hunks(&mut self, file: &DiffFile, view: &str) -> bool {
+        self.add_file_in_view(
+            file.display_path().clone(),
+            file.status,
+            file.content_hash,
+            view,
+        )
     }
 
     pub fn get_file_mut(&mut self, path: &PathBuf) -> Option<&mut FileReview> {
@@ -1420,7 +1519,7 @@ mod tests {
         review.toggle_hunk_reviewed(second_key.clone());
 
         let subset = test_diff_file("src/main.rs", vec![test_hunk(10, "first")]);
-        session.add_diff_file_preserving_hunks(&subset);
+        session.add_diff_file_preserving_hunks(&subset, "c1..c1");
 
         assert!(session.is_hunk_reviewed(&path, &first_key));
         assert!(session.is_hunk_reviewed(&path, &second_key));
@@ -1442,6 +1541,9 @@ mod tests {
                 line_comments: HashMap::new(),
                 reviewed_hunks: BTreeSet::new(),
                 content_hash: None,
+                content_hash_view: None,
+                reviewed_view_hashes: BTreeMap::new(),
+                full_view_hash: None,
             },
         );
 

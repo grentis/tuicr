@@ -27,6 +27,24 @@ impl App {
         })
     }
 
+    /// The view on screen: `FULL_REVIEW_VIEW`, or for a narrowed selection
+    /// the ids of its two end rows (ids survive new commits). Only `--branch`
+    /// reviews tell views apart; elsewhere any hash change unmarks, as
+    /// upstream.
+    pub(in crate::app) fn review_view_key(&self) -> String {
+        let range = self.commit_selection_range;
+        if self.branch_base().is_none()
+            || !Self::is_strict_commit_selection(range, self.review_commits.len())
+        {
+            return FULL_REVIEW_VIEW.to_string();
+        }
+        let (start, end) = range.expect("is_strict_commit_selection guarantees Some(range)");
+        format!(
+            "{}..{}",
+            self.review_commits[start].id, self.review_commits[end].id
+        )
+    }
+
     pub(in crate::app) fn apply_pr_commit_selector(
         &mut self,
         commits: Vec<crate::forge::traits::PullRequestCommit>,
@@ -1168,7 +1186,8 @@ impl App {
         // `reload_pr_inline_selection` preserves them: a narrowed selection is
         // a partial view of a wider review, and hunks it does not show are
         // still reviewed in that wider scope.
-        Self::register_diff_files(&mut self.session, &self.diff_files, true);
+        let view = self.review_view_key();
+        Self::register_diff_files(&mut self.session, &self.diff_files, true, &view);
 
         // Reset navigation, rebuild file tree + annotations
         let wrap = self.diff_state.wrap_lines;

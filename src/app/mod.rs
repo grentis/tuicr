@@ -14,8 +14,8 @@ use crate::forge::selector::PullRequestsTab;
 use crate::forge::traits::{ForgeBackend, ForgeRepository};
 use crate::model::review::{CommentLocation, FileReview};
 use crate::model::{
-    ClearScope, Comment, CommentType, DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin,
-    LineRange, LineSide, ReviewSession, SessionDiffSource,
+    ClearScope, Comment, CommentType, DiffFile, DiffHunk, DiffLine, FULL_REVIEW_VIEW, FileStatus,
+    LineOrigin, LineRange, LineSide, ReviewSession, SessionDiffSource,
 };
 use crate::persistence::load_latest_session_for_context;
 use crate::review_store::{AddCommentRequest, CommentTarget, add_comment_to_session};

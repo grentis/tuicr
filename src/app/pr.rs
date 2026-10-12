@@ -101,7 +101,12 @@ impl App {
         // selector range is a filtered view, not a new review scope.
         let preserve_hunks =
             Self::is_strict_commit_selection(self.commit_selection_range, self.pr_commits.len());
-        Self::register_diff_files(&mut self.session, &self.diff_files, preserve_hunks);
+        Self::register_diff_files(
+            &mut self.session,
+            &self.diff_files,
+            preserve_hunks,
+            FULL_REVIEW_VIEW,
+        );
 
         self.sort_files_by_directory(true);
         self.expand_all_dirs();
@@ -461,7 +466,8 @@ impl App {
         self.clear_expanded_gaps();
         // Range diffs can hide hunks that are still reviewed in the broader
         // PR session, so registration must not prune them.
-        Self::register_diff_files(&mut self.session, &self.diff_files, true);
+        let view = self.review_view_key();
+        Self::register_diff_files(&mut self.session, &self.diff_files, true, &view);
         self.sort_files_by_directory(true);
         self.expand_all_dirs();
         self.rebuild_annotations();

@@ -645,7 +645,12 @@ impl App {
             persisted.commit_selection_range,
             opened.commits.len(),
         );
-        Self::register_diff_files(&mut persisted, &opened.diff_files, preserve_hunks);
+        Self::register_diff_files(
+            &mut persisted,
+            &opened.diff_files,
+            preserve_hunks,
+            FULL_REVIEW_VIEW,
+        );
         Ok(Some(ReviewSession {
             pr_session_key: Some(key),
             diff_source: SessionDiffSource::PullRequest,
