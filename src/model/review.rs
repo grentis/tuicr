@@ -1525,6 +1525,108 @@ mod tests {
         assert!(session.is_hunk_reviewed(&path, &second_key));
     }
 
+    /// A file registered in the full view, then marked reviewed.
+    fn reviewed_file(session: &mut ReviewSession, hash: u64) -> PathBuf {
+        let path = PathBuf::from("src/lib.rs");
+        session.add_file(path.clone(), FileStatus::Modified, hash);
+        session.get_file_mut(&path).unwrap().reviewed = true;
+        path
+    }
+
+    #[test]
+    fn should_keep_reviewed_when_a_narrowed_view_shows_a_different_diff() {
+        // given
+        let mut session = test_session();
+        let path = reviewed_file(&mut session, 1);
+
+        // when: narrowing diffs fewer commits, so the hash differs unedited
+        let invalidated =
+            session.add_file_in_view(path.clone(), FileStatus::Modified, 2, "unstaged..unstaged");
+
+        // then
+        assert!(!invalidated);
+        assert!(session.is_file_reviewed(&path));
+    }
+
+    #[test]
+    fn should_keep_reviewed_when_marked_in_a_narrowed_view_and_seen_in_the_full_one() {
+        // given: marked while only the uncommitted changes were selected
+        let mut session = test_session();
+        let path = PathBuf::from("src/lib.rs");
+        session.add_file_in_view(path.clone(), FileStatus::Modified, 2, "unstaged..unstaged");
+        session.get_file_mut(&path).unwrap().reviewed = true;
+
+        // when: committing them drops that row and the review widens
+        let invalidated = session.add_file(path.clone(), FileStatus::Modified, 1);
+
+        // then
+        assert!(!invalidated);
+        assert!(session.is_file_reviewed(&path));
+    }
+
+    #[test]
+    fn should_reset_reviewed_when_the_same_view_shows_an_edit() {
+        // given
+        let mut session = test_session();
+        let path = reviewed_file(&mut session, 1);
+
+        // when
+        let invalidated = session.add_file(path.clone(), FileStatus::Modified, 3);
+
+        // then
+        assert!(invalidated);
+        assert!(!session.is_file_reviewed(&path));
+    }
+
+    #[test]
+    fn should_check_each_view_against_what_it_showed_before() {
+        // given: reviewed, then seen in a narrowed view and back in the full one
+        let mut session = test_session();
+        let path = reviewed_file(&mut session, 1);
+        let narrowed = "c2..c2";
+        session.add_file_in_view(path.clone(), FileStatus::Modified, 2, narrowed);
+        assert!(!session.add_file(path.clone(), FileStatus::Modified, 1));
+
+        // when: the narrowed view comes back with an edit in it
+        let invalidated = session.add_file_in_view(path.clone(), FileStatus::Modified, 4, narrowed);
+
+        // then
+        assert!(invalidated);
+        assert!(!session.is_file_reviewed(&path));
+    }
+
+    #[test]
+    fn should_reset_reviewed_when_the_full_view_shows_an_edit_after_a_new_view() {
+        // given: reviewed, then first seen in a narrowed view already edited
+        let mut session = test_session();
+        let path = reviewed_file(&mut session, 1);
+        assert!(!session.add_file_in_view(path.clone(), FileStatus::Modified, 6, "unstaged..c1"));
+
+        // when: the full view is read again
+        let invalidated = session.add_file(path.clone(), FileStatus::Modified, 3);
+
+        // then: it differs from the full view at the mark
+        assert!(invalidated);
+        assert!(!session.is_file_reviewed(&path));
+    }
+
+    #[test]
+    fn should_not_carry_view_hashes_from_before_an_unmark() {
+        // given: reviewed and seen in two views, then unmarked by an edit
+        let mut session = test_session();
+        let path = reviewed_file(&mut session, 1);
+        session.add_file_in_view(path.clone(), FileStatus::Modified, 2, "c2..c2");
+        assert!(session.add_file(path.clone(), FileStatus::Modified, 3));
+
+        // when: marked again, with the narrowed view showing the edit
+        session.get_file_mut(&path).unwrap().reviewed = true;
+        let invalidated = session.add_file_in_view(path.clone(), FileStatus::Modified, 5, "c2..c2");
+
+        // then: its hash from before the unmark is forgotten
+        assert!(!invalidated);
+        assert!(session.is_file_reviewed(&path));
+    }
+
     #[test]
     fn should_reset_reviewed_when_legacy_session_has_no_hash() {
         let mut session = test_session();

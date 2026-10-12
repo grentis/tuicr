@@ -35,6 +35,9 @@ struct BranchState {
     resolved: Vec<String>,
     /// Commit lists the commits + working-tree diff was asked for.
     combined_diffs: Vec<Vec<String>>,
+    /// `committed.py`'s hash in the whole-branch diff, where an uncommitted
+    /// edit shows.
+    committed_hash: u64,
 }
 
 struct BranchVcs {
@@ -87,7 +90,9 @@ impl VcsBackend for BranchVcs {
             .unwrap()
             .combined_diffs
             .push(commit_ids.to_vec());
-        Ok(vec![diff_file("committed.py"), diff_file("wip.py")])
+        let mut committed = diff_file("committed.py");
+        committed.content_hash = self.state.lock().unwrap().committed_hash;
+        Ok(vec![committed, diff_file("wip.py")])
     }
 
     /// A narrowed selection diffs only its commits.
@@ -292,6 +297,32 @@ fn should_keep_a_narrowed_selection_on_its_commit_when_one_is_added() {
 }
 
 #[test]
+fn should_unmark_a_file_edited_outside_a_narrowed_selection_on_reload() {
+    // given: only the commits selected, not the "Unstaged changes" row
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1", "c2"]);
+    let mut app = open(&state, Some("feature")).expect("open branch review");
+    let row = |app: &App, id: &str| app.review_commits.iter().position(|c| c.id == id).unwrap();
+    app.commit_selection_range = Some((row(&app, "c2"), row(&app, "c1")));
+    app.reload_inline_selection().expect("narrow");
+    let path = PathBuf::from("committed.py");
+    app.session.get_file_mut(&path).unwrap().reviewed = true;
+
+    // when: reloaded with nothing edited
+    app.reload_diff_files().expect(":e");
+
+    // then: the mark stays
+    assert!(app.session.is_file_reviewed(&path));
+
+    // when: edited in the working tree, outside the selection, and reloaded
+    state.lock().unwrap().committed_hash = 7;
+    app.reload_diff_files().expect(":e");
+
+    // then: the whole branch shows the edit, so the mark goes
+    assert!(!app.session.is_file_reviewed(&path));
+}
+
+#[test]
 fn should_fall_back_to_origin_when_base_is_missing_locally() {
     let _reviews = TestReviewsDir::new();
     let state = state_with(&["c1"]);
@@ -367,4 +398,26 @@ fn should_untag_comments_whose_commit_was_rewritten() {
     assert_eq!(untagged, 1);
     assert_eq!(session.review_comments[0].commit_id.as_deref(), Some("c1"));
     assert_eq!(session.review_comments[1].commit_id, None);
+}
+
+#[test]
+fn should_tell_narrowed_views_apart_only_in_branch_reviews() {
+    // given: a branch review narrowed to its oldest commit
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1", "c2"]);
+    let mut app = open(&state, Some("feature")).expect("open branch review");
+    let oldest = app.review_commits.len() - 1;
+    app.commit_selection_range = Some((oldest, oldest));
+
+    // then: the narrowed view has its own key, by commit id
+    assert_eq!(app.review_view_key(), "c1..c1");
+    app.commit_selection_range = Some((0, oldest));
+    assert_eq!(app.review_view_key(), FULL_REVIEW_VIEW);
+
+    // when: the same narrowing in any other kind of review
+    app.commit_selection_range = Some((oldest, oldest));
+    app.session.diff_source = SessionDiffSource::CommitRange;
+
+    // then: one view only, as upstream
+    assert_eq!(app.review_view_key(), FULL_REVIEW_VIEW);
 }
