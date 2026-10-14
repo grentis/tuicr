@@ -792,6 +792,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :expand   ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "Show the whole current file; again to show only its changes ({leader}x)"
+            )),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :theme    ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),

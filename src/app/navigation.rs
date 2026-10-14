@@ -506,7 +506,11 @@ impl App {
     /// Like the free `find_source_line` but also resolves `ExpandedContext`
     /// annotations through `get_expanded_line` so newly-revealed context lines
     /// count toward the match.
-    fn find_source_line_in_diff(&self, target_lineno: u32, side: LineSide) -> FindSourceLineResult {
+    pub(in crate::app) fn find_source_line_in_diff(
+        &self,
+        target_lineno: u32,
+        side: LineSide,
+    ) -> FindSourceLineResult {
         let current_file = self.diff_state.current_file_idx;
         let mut best: Option<(usize, u32)> = None;
 
