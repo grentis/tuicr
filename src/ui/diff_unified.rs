@@ -80,6 +80,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
     let mut content_rows = HashSet::new();
     let mut line_idx: usize = 0;
     let current_line_idx = app.diff_state.cursor_line;
+    let threads_first = app.forge_config.extended_comments;
 
     // Only build the expensive per-diff-line spans for lines that are actually
     // visible. Everything else still pushes (cheap) so `lines.len()` keeps
@@ -719,6 +720,21 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                             && file_idx == app.diff_state.current_file_idx
                             && app.comment_line == Some((old_ln, LineSide::Old));
 
+                        // Remote threads at this old-side line, first with
+                        // `[forge] extended_comments` so a reply follows its thread.
+                        if threads_first {
+                            render_remote_threads_for_anchor(
+                                &mut lines,
+                                &mut line_idx,
+                                current_line_idx,
+                                app,
+                                path,
+                                old_ln,
+                                LineSide::Old,
+                                &mut comment_bars,
+                            );
+                        }
+
                         if let Some(comments) = line_comments.get(&old_ln) {
                             for comment in comments {
                                 if comment.side == Some(LineSide::Old)
@@ -844,17 +860,19 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                             }
                         }
 
-                        // Render remote review threads anchored at this old-side line.
-                        render_remote_threads_for_anchor(
-                            &mut lines,
-                            &mut line_idx,
-                            current_line_idx,
-                            app,
-                            path,
-                            old_ln,
-                            LineSide::Old,
-                            &mut comment_bars,
-                        );
+                        // Otherwise after them.
+                        if !threads_first {
+                            render_remote_threads_for_anchor(
+                                &mut lines,
+                                &mut line_idx,
+                                current_line_idx,
+                                app,
+                                path,
+                                old_ln,
+                                LineSide::Old,
+                                &mut comment_bars,
+                            );
+                        }
 
                         // Render inline input for new line comment (old side)
                         if is_line_comment_mode && app.editing_comment_id.is_none() {
@@ -907,6 +925,21 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                             && !app.comment_is_file_level
                             && file_idx == app.diff_state.current_file_idx
                             && app.comment_line == Some((new_ln, LineSide::New));
+
+                        // Remote threads at this new-side line, first with
+                        // `[forge] extended_comments` so a reply follows its thread.
+                        if threads_first {
+                            render_remote_threads_for_anchor(
+                                &mut lines,
+                                &mut line_idx,
+                                current_line_idx,
+                                app,
+                                path,
+                                new_ln,
+                                LineSide::New,
+                                &mut comment_bars,
+                            );
+                        }
 
                         if let Some(comments) = line_comments.get(&new_ln) {
                             for comment in comments {
@@ -1032,17 +1065,19 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                             }
                         }
 
-                        // Render remote review threads anchored at this new-side line.
-                        render_remote_threads_for_anchor(
-                            &mut lines,
-                            &mut line_idx,
-                            current_line_idx,
-                            app,
-                            path,
-                            new_ln,
-                            LineSide::New,
-                            &mut comment_bars,
-                        );
+                        // Otherwise after them.
+                        if !threads_first {
+                            render_remote_threads_for_anchor(
+                                &mut lines,
+                                &mut line_idx,
+                                current_line_idx,
+                                app,
+                                path,
+                                new_ln,
+                                LineSide::New,
+                                &mut comment_bars,
+                            );
+                        }
 
                         // Render inline input for new line comment (new side)
                         if is_line_comment_mode && app.editing_comment_id.is_none() {

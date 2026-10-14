@@ -1510,7 +1510,7 @@ fn render_context_line_side_by_side(
     // Add comments if any
     let mut cursor_info_out: Option<SideBySideCursorInfo> = None;
     if let Some(new_ln) = diff_line.new_lineno {
-        let (new_line_idx, cursor_info) = add_comments_to_line(
+        let (new_line_idx, cursor_info) = add_notes_to_line(
             new_ln,
             line_comments,
             LineSide::New,
@@ -1521,16 +1521,6 @@ fn render_context_line_side_by_side(
         );
         line_idx = new_line_idx;
         cursor_info_out = cursor_info;
-        if let Some(file) = ctx.app.diff_files.get(file_idx) {
-            line_idx = add_remote_threads_to_line(
-                new_ln,
-                LineSide::New,
-                ctx,
-                file.display_path(),
-                line_idx,
-                lines,
-            );
-        }
     }
 
     (line_idx, cursor_info_out)
@@ -1679,7 +1669,7 @@ fn render_deletion_addition_pair_side_by_side(
         if let Some(del_line) = del_opt
             && let Some(old_ln) = del_line.old_lineno
         {
-            let (new_line_idx, cursor_info) = add_comments_to_line(
+            let (new_line_idx, cursor_info) = add_notes_to_line(
                 old_ln,
                 line_comments,
                 LineSide::Old,
@@ -1692,23 +1682,13 @@ fn render_deletion_addition_pair_side_by_side(
             if cursor_info.is_some() {
                 cursor_info_out = cursor_info;
             }
-            if let Some(file) = ctx.app.diff_files.get(file_idx) {
-                line_idx = add_remote_threads_to_line(
-                    old_ln,
-                    LineSide::Old,
-                    ctx,
-                    file.display_path(),
-                    line_idx,
-                    lines,
-                );
-            }
         }
 
         // Add comments for addition
         if let Some(add_line) = add_opt
             && let Some(new_ln) = add_line.new_lineno
         {
-            let (new_line_idx, cursor_info) = add_comments_to_line(
+            let (new_line_idx, cursor_info) = add_notes_to_line(
                 new_ln,
                 line_comments,
                 LineSide::New,
@@ -1720,16 +1700,6 @@ fn render_deletion_addition_pair_side_by_side(
             line_idx = new_line_idx;
             if cursor_info.is_some() {
                 cursor_info_out = cursor_info;
-            }
-            if let Some(file) = ctx.app.diff_files.get(file_idx) {
-                line_idx = add_remote_threads_to_line(
-                    new_ln,
-                    LineSide::New,
-                    ctx,
-                    file.display_path(),
-                    line_idx,
-                    lines,
-                );
             }
         }
     }
@@ -1810,7 +1780,7 @@ fn render_standalone_addition_side_by_side(
     // Add comments if any
     let mut cursor_info_out: Option<SideBySideCursorInfo> = None;
     if let Some(new_ln) = diff_line.new_lineno {
-        let (new_line_idx, cursor_info) = add_comments_to_line(
+        let (new_line_idx, cursor_info) = add_notes_to_line(
             new_ln,
             line_comments,
             LineSide::New,
@@ -1821,16 +1791,6 @@ fn render_standalone_addition_side_by_side(
         );
         line_idx = new_line_idx;
         cursor_info_out = cursor_info;
-        if let Some(file) = ctx.app.diff_files.get(file_idx) {
-            line_idx = add_remote_threads_to_line(
-                new_ln,
-                LineSide::New,
-                ctx,
-                file.display_path(),
-                line_idx,
-                lines,
-            );
-        }
     }
 
     (line_idx, cursor_info_out)
@@ -1870,7 +1830,7 @@ fn render_commit_message_line_side_by_side(
 
     let mut cursor_info_out: Option<SideBySideCursorInfo> = None;
     if let Some(new_ln) = diff_line.new_lineno {
-        let (new_line_idx, cursor_info) = add_comments_to_line(
+        let (new_line_idx, cursor_info) = add_notes_to_line(
             new_ln,
             line_comments,
             LineSide::New,
@@ -1881,16 +1841,6 @@ fn render_commit_message_line_side_by_side(
         );
         line_idx = new_line_idx;
         cursor_info_out = cursor_info;
-        if let Some(file) = ctx.app.diff_files.get(file_idx) {
-            line_idx = add_remote_threads_to_line(
-                new_ln,
-                LineSide::New,
-                ctx,
-                file.display_path(),
-                line_idx,
-                lines,
-            );
-        }
     }
 
     (line_idx, cursor_info_out)
@@ -1998,6 +1948,42 @@ fn add_empty_column_spans(spans: &mut Vec<Span>, content_width: usize, lw: usize
 /// Render remote review threads anchored at this `(file, line, side)`
 /// position into the side-by-side rendering. Mirrors the unified-view
 /// helper but uses the side-by-side cursor indicator path.
+/// Local comments and forge threads under `line_num`. With `[forge]
+/// extended_comments` the threads come first, so a reply follows the thread
+/// it answers.
+fn add_notes_to_line(
+    line_num: u32,
+    line_comments: &std::collections::HashMap<u32, Vec<crate::model::Comment>>,
+    side: LineSide,
+    ctx: &SideBySideContext,
+    file_idx: usize,
+    mut line_idx: usize,
+    lines: &mut Vec<Line>,
+) -> (usize, Option<SideBySideCursorInfo>) {
+    let threads_first = ctx.app.forge_config.extended_comments;
+    let path = ctx
+        .app
+        .diff_files
+        .get(file_idx)
+        .map(|file| file.display_path());
+    if threads_first && let Some(path) = path {
+        line_idx = add_remote_threads_to_line(line_num, side, ctx, path, line_idx, lines);
+    }
+    let (mut line_idx, cursor_info) = add_comments_to_line(
+        line_num,
+        line_comments,
+        side,
+        ctx,
+        file_idx,
+        line_idx,
+        lines,
+    );
+    if !threads_first && let Some(path) = path {
+        line_idx = add_remote_threads_to_line(line_num, side, ctx, path, line_idx, lines);
+    }
+    (line_idx, cursor_info)
+}
+
 fn add_remote_threads_to_line(
     line_num: u32,
     side: LineSide,

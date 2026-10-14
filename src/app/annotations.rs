@@ -312,6 +312,7 @@ impl App {
                                 &remote_index,
                                 self.diff_state.viewport_width,
                                 commit_set.as_ref(),
+                                self.forge_config.extended_comments,
                             );
                         }
                         DiffViewMode::SideBySide => {
@@ -326,6 +327,7 @@ impl App {
                                 &remote_index,
                                 self.diff_state.viewport_width,
                                 commit_set.as_ref(),
+                                self.forge_config.extended_comments,
                             );
                         }
                     }
@@ -503,6 +505,52 @@ impl App {
         }
     }
 
+    /// Local comments and forge threads anchored at `line`. With
+    /// `threads_first` the threads come first, so a reply follows the thread
+    /// it answers.
+    #[allow(clippy::too_many_arguments)]
+    fn push_line_notes(
+        annotations: &mut Vec<AnnotatedLine>,
+        file_idx: usize,
+        line: Option<u32>,
+        side: LineSide,
+        line_comments: &std::collections::HashMap<u32, Vec<crate::model::Comment>>,
+        viewport_width: usize,
+        commit_set: Option<&std::collections::HashSet<String>>,
+        remote_threads: &[crate::forge::remote_comments::RemoteReviewThread],
+        remote_index: &RemoteThreadIndex,
+        path: &std::path::Path,
+        threads_first: bool,
+    ) {
+        let push_threads = |annotations: &mut Vec<AnnotatedLine>| {
+            if let Some(line) = line {
+                Self::push_remote_threads(
+                    annotations,
+                    remote_threads,
+                    remote_index,
+                    path,
+                    line,
+                    side,
+                );
+            }
+        };
+        if threads_first {
+            push_threads(annotations);
+        }
+        Self::push_comments(
+            annotations,
+            file_idx,
+            line,
+            line_comments,
+            side,
+            viewport_width,
+            commit_set,
+        );
+        if !threads_first {
+            push_threads(annotations);
+        }
+    }
+
     /// Build annotations for unified diff mode (one annotation per diff line)
     #[allow(clippy::too_many_arguments)]
     fn build_unified_diff_annotations(
@@ -516,6 +564,7 @@ impl App {
         remote_index: &RemoteThreadIndex,
         viewport_width: usize,
         commit_set: Option<&std::collections::HashSet<String>>,
+        threads_first: bool,
     ) {
         for (line_idx, diff_line) in lines.iter().enumerate() {
             annotations.push(AnnotatedLine::DiffLine {
@@ -528,43 +577,35 @@ impl App {
 
             // Line comments on old side (delete lines)
             if let Some(old_ln) = diff_line.old_lineno {
-                Self::push_comments(
+                Self::push_line_notes(
                     annotations,
                     file_idx,
                     Some(old_ln),
-                    line_comments,
                     LineSide::Old,
+                    line_comments,
                     viewport_width,
                     commit_set,
-                );
-                Self::push_remote_threads(
-                    annotations,
                     remote_threads,
                     remote_index,
                     path,
-                    old_ln,
-                    LineSide::Old,
+                    threads_first,
                 );
             }
 
             // Line comments on new side (added/context lines)
             if let Some(new_ln) = diff_line.new_lineno {
-                Self::push_comments(
+                Self::push_line_notes(
                     annotations,
                     file_idx,
                     Some(new_ln),
-                    line_comments,
                     LineSide::New,
+                    line_comments,
                     viewport_width,
                     commit_set,
-                );
-                Self::push_remote_threads(
-                    annotations,
                     remote_threads,
                     remote_index,
                     path,
-                    new_ln,
-                    LineSide::New,
+                    threads_first,
                 );
             }
         }
@@ -583,6 +624,7 @@ impl App {
         remote_index: &RemoteThreadIndex,
         viewport_width: usize,
         commit_set: Option<&std::collections::HashSet<String>>,
+        threads_first: bool,
     ) {
         let mut i = 0;
         while i < lines.len() {
@@ -599,25 +641,19 @@ impl App {
                         new_lineno: diff_line.new_lineno,
                     });
 
-                    Self::push_comments(
+                    Self::push_line_notes(
                         annotations,
                         file_idx,
                         diff_line.new_lineno,
-                        line_comments,
                         LineSide::New,
+                        line_comments,
                         viewport_width,
                         commit_set,
+                        remote_threads,
+                        remote_index,
+                        path,
+                        threads_first,
                     );
-                    if let Some(new_ln) = diff_line.new_lineno {
-                        Self::push_remote_threads(
-                            annotations,
-                            remote_threads,
-                            remote_index,
-                            path,
-                            new_ln,
-                            LineSide::New,
-                        );
-                    }
 
                     i += 1
                 }
@@ -665,44 +701,32 @@ impl App {
                             new_lineno,
                         });
 
-                        Self::push_comments(
+                        Self::push_line_notes(
                             annotations,
                             file_idx,
                             old_lineno,
-                            line_comments,
                             LineSide::Old,
+                            line_comments,
                             viewport_width,
                             commit_set,
+                            remote_threads,
+                            remote_index,
+                            path,
+                            threads_first,
                         );
-                        if let Some(old_ln) = old_lineno {
-                            Self::push_remote_threads(
-                                annotations,
-                                remote_threads,
-                                remote_index,
-                                path,
-                                old_ln,
-                                LineSide::Old,
-                            );
-                        }
-                        Self::push_comments(
+                        Self::push_line_notes(
                             annotations,
                             file_idx,
                             new_lineno,
-                            line_comments,
                             LineSide::New,
+                            line_comments,
                             viewport_width,
                             commit_set,
+                            remote_threads,
+                            remote_index,
+                            path,
+                            threads_first,
                         );
-                        if let Some(new_ln) = new_lineno {
-                            Self::push_remote_threads(
-                                annotations,
-                                remote_threads,
-                                remote_index,
-                                path,
-                                new_ln,
-                                LineSide::New,
-                            );
-                        }
                     }
 
                     i = add_end;
@@ -717,25 +741,19 @@ impl App {
                         new_lineno: diff_line.new_lineno,
                     });
 
-                    Self::push_comments(
+                    Self::push_line_notes(
                         annotations,
                         file_idx,
                         diff_line.new_lineno,
-                        line_comments,
                         LineSide::New,
+                        line_comments,
                         viewport_width,
                         commit_set,
+                        remote_threads,
+                        remote_index,
+                        path,
+                        threads_first,
                     );
-                    if let Some(new_ln) = diff_line.new_lineno {
-                        Self::push_remote_threads(
-                            annotations,
-                            remote_threads,
-                            remote_index,
-                            path,
-                            new_ln,
-                            LineSide::New,
-                        );
-                    }
 
                     i += 1;
                 }
