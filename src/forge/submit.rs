@@ -166,6 +166,30 @@ pub struct InlineComment {
     pub comment_id: String,
 }
 
+/// A local comment answering a forge review thread, sent with the review
+/// instead of as a new inline comment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadReply {
+    /// Forge thread node id (`Comment::reply_to_thread`).
+    pub thread_id: String,
+    pub body: String,
+    /// Source `Comment.id`, to flip its lifecycle after a successful submit.
+    pub comment_id: String,
+}
+
+impl ThreadReply {
+    /// The reply for `comment`, or `None` when it answers no thread. The
+    /// body carries the same `[TYPE]` prefix an inline comment would.
+    pub fn from_comment(comment: &Comment, ctx: SubmitContext<'_>) -> Option<Self> {
+        let thread_id = comment.reply_to_thread.clone()?;
+        Some(Self {
+            thread_id,
+            body: build_inline_body(comment, false, ctx),
+            comment_id: comment.id.clone(),
+        })
+    }
+}
+
 /// Why the mapper could not produce an inline comment for a given local
 /// `Comment`. Used by the resolver UI to explain the choice to the user and
 /// to seed the "Unplaced comments" summary section.

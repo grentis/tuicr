@@ -785,6 +785,8 @@ pub struct SubmitState {
     /// instead of routing through `SubmitConfirm`. Set by the action-picker
     /// path; left `false` for explicit `:submit <event>` invocations.
     pub skip_confirm: bool,
+    /// Local replies to existing threads, sent inside the same review.
+    pub replies: Vec<crate::forge::submit::ThreadReply>,
 }
 
 /// Event options shown in the bare-`:submit` action picker, in display
@@ -979,6 +981,8 @@ pub struct SubmitInFlightState {
     /// The mappable inline comments that were sent in the payload. Each
     /// carries the source `Comment.id` so we can locate it post-success.
     pub mappable: Vec<crate::forge::submit::InlineComment>,
+    /// The thread replies that were sent with it.
+    pub replies: Vec<crate::forge::submit::ThreadReply>,
     /// Source `Comment.id`s of unmappable items the user chose to move into
     /// the review body's "Unplaced comments" section.
     pub summary_comment_ids: Vec<String>,
@@ -1063,6 +1067,7 @@ pub struct ViewedSyncWorker {
 }
 
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
+pub use thread_reply::ThreadReplyTarget;
 
 /// Outcome of posting a PR conversation comment.
 #[derive(Debug)]
@@ -1280,6 +1285,8 @@ pub struct App {
     pub comment_is_file_level: bool,
     pub comment_line: Option<(u32, LineSide)>,
     pub editing_comment_id: Option<String>,
+    /// The thread the comment box answers (`c` on a thread).
+    pub comment_reply: Option<ThreadReplyTarget>,
 
     pub visual_selection: Option<VisualSelection>,
     /// True once the active mouse drag has actually moved off the press cell.
@@ -1990,6 +1997,7 @@ mod session;
 pub mod sessions_tab;
 mod submit;
 mod theme_picker;
+mod thread_reply;
 mod tree;
 mod viewed_sync;
 mod visual;

@@ -198,6 +198,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 None,
                 comment_width,
                 (comment.author != app.username).then_some(comment.author.as_str()),
+                app.reply_label(comment),
             );
             for mut comment_line in comment_lines {
                 let indicator = cursor_indicator(line_idx, current_line_idx);
@@ -400,6 +401,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                         None,
                         comment_width,
                         (comment.author != app.username).then_some(comment.author.as_str()),
+                        app.reply_label(comment),
                     );
                     for mut comment_line in comment_lines {
                         let indicator = cursor_indicator(line_idx, current_line_idx);
@@ -813,6 +815,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 comment_width,
                                                 (comment.author != app.username)
                                                     .then_some(comment.author.as_str()),
+                                                app.reply_label(comment),
                                             );
                                             for mut comment_line in comment_lines {
                                                 let is_current = line_idx == current_line_idx;
@@ -1001,6 +1004,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 comment_width,
                                                 (comment.author != app.username)
                                                     .then_some(comment.author.as_str()),
+                                                app.reply_label(comment),
                                             );
                                             for mut comment_line in comment_lines {
                                                 let indicator =

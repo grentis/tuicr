@@ -192,6 +192,10 @@ pub struct Comment {
     /// comments are always shown.
     #[serde(default)]
     pub commit_id: Option<String>,
+    /// Forge thread this comment answers (GitHub: the thread's node id), sent
+    /// into it on submit. `None` for an ordinary comment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to_thread: Option<String>,
 }
 
 impl Comment {
@@ -209,6 +213,7 @@ impl Comment {
             remote_review_id: None,
             remote_comment_id: None,
             commit_id: None,
+            reply_to_thread: None,
         }
     }
 
@@ -232,6 +237,7 @@ impl Comment {
             remote_review_id: None,
             remote_comment_id: None,
             commit_id: None,
+            reply_to_thread: None,
         }
     }
 

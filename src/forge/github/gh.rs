@@ -28,6 +28,20 @@ use super::submit::build_review_payload;
 use crate::forge::traits::CreateReviewRequest;
 
 const DEFAULT_GITHUB_HOST: &str = "github.com";
+
+/// Add a reply to a review thread inside a pending review.
+const ADD_THREAD_REPLY_MUTATION: &str = concat!(
+    "mutation($review:ID!,$thread:ID!,$body:String!){",
+    "addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,",
+    "pullRequestReviewThreadId:$thread,body:$body}){comment{id}}}"
+);
+
+/// Publish a pending review with the chosen event.
+const SUBMIT_REVIEW_MUTATION: &str = concat!(
+    "mutation($review:ID!,$event:PullRequestReviewEvent!){",
+    "submitPullRequestReview(input:{pullRequestReviewId:$review,event:$event})",
+    "{pullRequestReview{state}}}"
+);
 const PR_LIST_JSON_FIELDS: &str =
     "number,title,author,headRefName,baseRefName,updatedAt,url,state,isDraft";
 const PR_VIEW_JSON_FIELDS: &str = concat!(
@@ -656,31 +670,69 @@ where
             request.event,
             request.comments,
         );
-        let payload_json = serde_json::to_string(&payload)?;
-
-        let endpoint = format!(
-            "repos/{}/{}/pulls/{}/reviews",
-            pr.repository.owner, pr.repository.name, pr.number,
-        );
-        let mut args = vec![
-            "api".to_string(),
-            endpoint,
-            "--method".to_string(),
-            "POST".to_string(),
-            "--input".to_string(),
-            "-".to_string(),
-        ];
-        if pr.repository.host != DEFAULT_GITHUB_HOST {
-            args.push("--hostname".to_string());
-            args.push(pr.repository.host.clone());
-        }
-
-        let output = self
-            .runner
-            .run_with_stdin(&args, &payload_json)
-            .map_err(|err| map_create_review_error(err, &pr.repository.host))?;
-
+        let output = self.post_review(pr, &payload)?;
         parse_create_review_response(&output)
+    }
+
+    fn create_review_with_replies(
+        &self,
+        pr: &PullRequestDetails,
+        request: CreateReviewRequest<'_>,
+        replies: &[crate::forge::submit::ThreadReply],
+    ) -> Result<GhCreateReviewResponse> {
+        if replies.is_empty() {
+            return self.create_review(pr, request);
+        }
+        // REST cannot reply inside a review, GraphQL can: create the review
+        // pending, add the replies, then submit it with the chosen event.
+        let payload = build_review_payload(
+            request.commit_id,
+            request.body,
+            crate::forge::submit::SubmitEvent::Draft,
+            request.comments,
+        );
+        let output = self.post_review(pr, &payload)?;
+        let mut response = parse_create_review_response(&output)?;
+        let node_id = serde_json::from_str::<serde_json::Value>(&output)?["node_id"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| {
+                TuicrError::Forge("Create-review response missing `node_id`".to_string())
+            })?;
+
+        let finished = replies
+            .iter()
+            .try_for_each(|reply| {
+                self.run_graphql(
+                    pr,
+                    ADD_THREAD_REPLY_MUTATION,
+                    &[
+                        ("review", &node_id),
+                        ("thread", &reply.thread_id),
+                        ("body", &reply.body),
+                    ],
+                )
+                .map(|_| ())
+            })
+            .and_then(|()| match request.event.github_event() {
+                Some(event) => self
+                    .run_graphql(
+                        pr,
+                        SUBMIT_REVIEW_MUTATION,
+                        &[("review", &node_id), ("event", event)],
+                    )
+                    .map(|_| ()),
+                None => Ok(()),
+            });
+        if let Err(error) = finished {
+            // A leftover pending review would block the next submit.
+            let _ = self.delete_pending_review(pr, response.id);
+            return Err(error);
+        }
+        if let Some(event) = request.event.github_event() {
+            response.state = event.to_string();
+        }
+        Ok(response)
     }
 
     fn create_pull_request_comment(
@@ -783,6 +835,86 @@ where
             args.push(pr.repository.host.clone());
         }
         args
+    }
+
+    /// POST a review payload to `pulls/<n>/reviews`, returning GitHub's raw
+    /// response.
+    fn post_review(&self, pr: &PullRequestDetails, payload: &serde_json::Value) -> Result<String> {
+        let payload_json = serde_json::to_string(payload)?;
+        let endpoint = format!(
+            "repos/{}/{}/pulls/{}/reviews",
+            pr.repository.owner, pr.repository.name, pr.number,
+        );
+        let mut args = vec![
+            "api".to_string(),
+            endpoint,
+            "--method".to_string(),
+            "POST".to_string(),
+            "--input".to_string(),
+            "-".to_string(),
+        ];
+        if pr.repository.host != DEFAULT_GITHUB_HOST {
+            args.push("--hostname".to_string());
+            args.push(pr.repository.host.clone());
+        }
+        self.runner
+            .run_with_stdin(&args, &payload_json)
+            .map_err(|err| map_create_review_error(err, &pr.repository.host))
+    }
+
+    /// Delete a review that is still pending.
+    fn delete_pending_review(&self, pr: &PullRequestDetails, review_id: u64) -> Result<()> {
+        let mut args = vec![
+            "api".to_string(),
+            format!(
+                "repos/{}/{}/pulls/{}/reviews/{review_id}",
+                pr.repository.owner, pr.repository.name, pr.number,
+            ),
+            "--method".to_string(),
+            "DELETE".to_string(),
+        ];
+        if pr.repository.host != DEFAULT_GITHUB_HOST {
+            args.push("--hostname".to_string());
+            args.push(pr.repository.host.clone());
+        }
+        self.run_gh(args, &pr.repository.host).map(|_| ())
+    }
+
+    /// Run a GraphQL document with string variables: `-F` would parse numbers
+    /// and `@` files.
+    fn run_graphql(
+        &self,
+        pr: &PullRequestDetails,
+        query: &str,
+        variables: &[(&str, &str)],
+    ) -> Result<String> {
+        let mut args = vec![
+            "api".to_string(),
+            "graphql".to_string(),
+            "-f".to_string(),
+            format!("query={query}"),
+        ];
+        for (name, value) in variables {
+            args.push("-f".to_string());
+            args.push(format!("{name}={value}"));
+        }
+        if pr.repository.host != DEFAULT_GITHUB_HOST {
+            args.push("--hostname".to_string());
+            args.push(pr.repository.host.clone());
+        }
+        let output = self.run_gh(args, &pr.repository.host)?;
+        let payload: serde_json::Value = serde_json::from_str(&output)?;
+        if let Some(errors) = payload["errors"].as_array().filter(|e| !e.is_empty()) {
+            let messages: Vec<&str> = errors
+                .iter()
+                .filter_map(|error| error["message"].as_str())
+                .collect();
+            return Err(TuicrError::Forge(format!(
+                "GitHub GraphQL error: {}",
+                messages.join("; ")
+            )));
+        }
+        Ok(output)
     }
 
     /// Resolve (and memoize) the PR's GraphQL node id.

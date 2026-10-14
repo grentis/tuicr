@@ -529,6 +529,7 @@ pub fn format_comment_lines(
     line_range: Option<LineRange>,
     width: usize,
     author: Option<&str>,
+    reply_label: Option<String>,
 ) -> Vec<Line<'static>> {
     let type_style = styles::comment_type_style(theme, comment_type.color);
     let border_style = match author {
@@ -553,6 +554,8 @@ pub fn format_comment_lines(
         Some(range) => format!("L{}-L{} ", range.start, range.end),
         None => String::new(),
     };
+    // A reply names the thread it answers, ahead of its line.
+    let line_info = format!("{}{line_info}", reply_label.unwrap_or_default());
 
     // "    │  " is the per-line content prefix; everything past that is content.
     // Subtract two extra: one so ratatui never wraps an exact-fit line, and
@@ -760,6 +763,7 @@ mod tests {
                     // What every call site passes: the viewport minus the
                     // cursor-indicator column.
                     viewport_width.saturating_sub(1),
+                    None,
                     None,
                 );
                 assert_eq!(
@@ -1163,6 +1167,7 @@ mod tests {
             content,
             None,
             80,
+            None,
             None,
         );
         // Header + footer wrap the body; reconstruct must round-trip the text.

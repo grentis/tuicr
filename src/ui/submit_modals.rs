@@ -166,6 +166,9 @@ pub fn render_submit_confirm(frame: &mut Frame, app: &App) {
         )));
     }
     lines.push(Line::from(format!("Inline: {n}", n = state.mappable.len())));
+    if !state.replies.is_empty() {
+        lines.push(Line::from(format!("Replies: {n}", n = state.replies.len())));
+    }
     lines.push(Line::from(format!("Moved to summary: {moved_count}")));
     lines.push(Line::from(format!("Omitted: {omit_count}")));
     lines.push(Line::from(format!("Body: {body_summary}")));
@@ -515,6 +518,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_resolver(&app);
         let text = buffer_text(&buffer);
@@ -561,6 +565,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let text = buffer_text(&draw_resolver(&app));
         // The emoji spans two cells, so the buffer reads back with padding.
@@ -588,6 +593,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_resolver(&app);
         let text = buffer_text(&buffer);
@@ -605,6 +611,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_confirm(&app);
         let text = buffer_text(&buffer);
@@ -630,6 +637,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_confirm(&app);
         let text = buffer_text(&buffer);
@@ -650,6 +658,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_confirm(&app);
         let text = buffer_text(&buffer);
@@ -671,6 +680,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_confirm(&app);
         let text = buffer_text(&buffer);
@@ -707,6 +717,7 @@ mod tests {
             resolver_cursor: 0,
             commit_id: "abcdef0123".to_string(),
             skip_confirm: false,
+            replies: Vec::new(),
         });
         let buffer = draw_confirm(&app);
         let text = buffer_text(&buffer);

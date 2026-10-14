@@ -173,7 +173,7 @@ Shown below the file tree when local comments or visible remote PR threads exist
 |-----|--------|
 | `r` | Toggle file reviewed (syncs with GitHub's *Viewed* checkbox via `[forge] sync_viewed`) |
 | `R` | Toggle hunk reviewed |
-| `c` | Add line comment (or file comment if not on a diff line) |
+| `c` | Add line comment (or file comment if not on a diff line); on a GitHub thread, reply to it |
 | `C` | Add file comment |
 | `<leader>c` | Add review comment (sent as the review body on `:submit`) |
 | `<leader>C` | Post a PR conversation comment now, verbatim, as GitHub's comment box does, so comment-command bots see it (GitHub, `[forge] extended_comments`) |
@@ -372,6 +372,16 @@ Gitea requires a review summary for `request-changes` and `draft`, and for `comm
 are no inline comments; inline comments alone do not satisfy it. GitLab `draft` creates draft
 notes that the author publishes from GitLab's own "Submit review" UI. Gerrit `draft` stores draft
 comments that the author publishes from Gerrit's Reply UI.
+
+### Replying to GitHub threads
+
+With `extended_comments = true` under `[forge]`, `c` on a comment thread in a
+GitHub PR review opens the comment box to answer it. The answer is a local draft like any other comment, shown next to the
+thread with a `↳ reply to @author` tag, and `i` / `dd` edit or delete it until
+it is sent. `:submit` sends it as a reply inside that thread, as part of the
+same review as your new comments, so it shares the review's event (Comment,
+Approve, Request changes, or Draft, which leaves it pending). Replies to
+threads on other forges are not supported.
 
 ## Commit selection / review target selector
 
