@@ -2060,6 +2060,23 @@ comment_type_prefix = false
     }
 
     #[test]
+    fn should_parse_extended_comments_from_the_forge_section() {
+        let outcome = parse_config("[forge]\nextended_comments = true\n");
+        let forge = outcome
+            .config
+            .and_then(|cfg| cfg.forge)
+            .expect("forge section should parse");
+        assert!(forge.extended_comments);
+        assert!(!forge.sync_viewed);
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn should_keep_extended_comments_off_by_default() {
+        assert!(!ForgeConfig::default().extended_comments);
+    }
+
+    #[test]
     fn should_parse_sync_viewed_from_the_forge_section() {
         // `[forge]` is read key by key: a new field must be listed here too.
         let outcome = parse_config(
