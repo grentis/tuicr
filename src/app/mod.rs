@@ -1454,8 +1454,9 @@ pub struct App {
     /// concatenation. Toggled via `:focus` or `<leader>f`.
     pub is_single_file_view: bool,
     /// A reviewed file whose body is temporarily expanded after opening a
-    /// comment from the summary view. The persisted reviewed marker is left
-    /// untouched; this is only a presentation override for continuous view.
+    /// comment from the summary view or the comment navigator. The persisted
+    /// reviewed marker is left untouched; this is only a presentation
+    /// override for continuous view.
     pub revealed_reviewed_file: Option<PathBuf>,
     /// A reviewed hunk whose body is temporarily expanded after opening a
     /// comment from the summary view. The persisted reviewed marker is left
@@ -1561,6 +1562,9 @@ pub struct App {
     pub commit_order: CommitOrder,
     /// Config `click_toggles_folders`: clicking a folder folds it.
     pub click_toggles_folders: bool,
+    /// Config `list_reviewed_file_comments`: the navigator also lists collapsed
+    /// reviewed files' comments.
+    pub list_reviewed_file_comments: bool,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;

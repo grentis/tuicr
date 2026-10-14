@@ -88,6 +88,13 @@ fn render_comment_row(app: &App, item: &CommentNavigatorItem) -> Line<'static> {
         .as_deref()
         .and_then(|author| styles::author_accent(&app.username, author));
 
+    // Comments of a collapsed reviewed file are listed dimmed, like the file.
+    let marker_style = if app.comment_navigator_item_collapsed_file(item).is_some() {
+        dim_style
+    } else {
+        marker_style
+    };
+
     let mut spans = vec![Span::styled(marker, marker_style), Span::raw(" ")];
     if let Some(color) = author_accent {
         spans.push(Span::styled(

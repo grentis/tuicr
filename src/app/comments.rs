@@ -197,6 +197,20 @@ impl App {
         let mut last_key: Option<CommentNavigatorKey> = None;
 
         for (idx, annotation) in self.line_annotations.iter().enumerate() {
+            // A collapsed reviewed file draws only its header: list its
+            // comments from the session.
+            if let AnnotatedLine::FileHeader { file_idx } = annotation
+                && self.list_reviewed_file_comments
+                && self.should_collapse_file(*file_idx)
+            {
+                items.extend(
+                    self.collapsed_file_comment_keys(*file_idx)
+                        .into_iter()
+                        .filter_map(|key| self.comment_navigator_item_for_key(key, idx)),
+                );
+                last_key = None;
+                continue;
+            }
             let Some(key) = Self::comment_navigator_key(annotation) else {
                 last_key = None;
                 continue;
@@ -213,6 +227,92 @@ impl App {
         }
 
         items
+    }
+
+    /// Navigator keys for a collapsed file's comments and threads, in the order
+    /// the expanded file draws them: file comments, then by line.
+    fn collapsed_file_comment_keys(&self, file_idx: usize) -> Vec<CommentNavigatorKey> {
+        use crate::forge::remote_comments::RemoteCommentSide;
+
+        let Some(path) = self.diff_files.get(file_idx).map(|f| f.display_path()) else {
+            return Vec::new();
+        };
+        let commit_set = self.selected_commit_set();
+        let side_order = |side: LineSide| match side {
+            LineSide::Old => 0,
+            LineSide::New => 1,
+        };
+        // Forge threads lead a line only with `[forge] extended_comments`.
+        let (thread_rank, local_rank) = if self.forge_config.extended_comments {
+            (0, 1)
+        } else {
+            (1, 0)
+        };
+        let mut keys = Vec::new();
+        // (line, side, rank, index): sorting gives the draw order.
+        let mut by_line: Vec<((u32, u8, u8, usize), CommentNavigatorKey)> = Vec::new();
+
+        if let Some(review) = self.session.files.get(path) {
+            for (comment_idx, comment) in review.file_comments.iter().enumerate() {
+                if Self::comment_visible_with(comment, commit_set.as_ref()) {
+                    keys.push(CommentNavigatorKey::File {
+                        file_idx,
+                        comment_idx,
+                    });
+                }
+            }
+            for (&line, comments) in &review.line_comments {
+                for (comment_idx, comment) in comments.iter().enumerate() {
+                    if !Self::comment_visible_with(comment, commit_set.as_ref()) {
+                        continue;
+                    }
+                    let side = comment.side.unwrap_or(LineSide::New);
+                    by_line.push((
+                        (line, side_order(side), local_rank, comment_idx),
+                        CommentNavigatorKey::Line {
+                            file_idx,
+                            line,
+                            side,
+                            comment_idx,
+                        },
+                    ));
+                }
+            }
+        }
+
+        let visibility = self.session.remote_comments_visibility;
+        let path = path.to_string_lossy();
+        for (thread_idx, thread) in self.forge_review_threads.iter().enumerate() {
+            let Some(line) = thread.line else { continue };
+            if thread.path != path || visibility.render_decision(thread).is_none() {
+                continue;
+            }
+            let side = match thread.side {
+                RemoteCommentSide::Left => LineSide::Old,
+                RemoteCommentSide::Right => LineSide::New,
+            };
+            by_line.push((
+                (line, side_order(side), thread_rank, thread_idx),
+                CommentNavigatorKey::Remote { thread_idx },
+            ));
+        }
+
+        by_line.sort_by_key(|(order, _)| *order);
+        keys.extend(by_line.into_iter().map(|(_, key)| key));
+        keys
+    }
+
+    /// The file a navigator item belongs to, when it is collapsed as reviewed.
+    pub fn comment_navigator_item_collapsed_file(
+        &self,
+        item: &CommentNavigatorItem,
+    ) -> Option<usize> {
+        let path = item.path.as_deref()?;
+        let file_idx = self
+            .diff_files
+            .iter()
+            .position(|file| file.display_path() == Path::new(path))?;
+        self.should_collapse_file(file_idx).then_some(file_idx)
     }
 
     pub fn has_comment_navigator_items(&self) -> bool {
@@ -289,7 +389,30 @@ impl App {
                 .iter()
                 .position(|file| file.display_path() == Path::new(path))
         });
-        self.move_cursor_to_annotation(item.target_annotation);
+        // An item from a collapsed reviewed file has no row yet: open the file
+        // without unmarking it, as a summary jump does, and find the comment's
+        // row. It closes again once a comment elsewhere is picked.
+        let mut target_annotation = item.target_annotation;
+        let collapsed_idx = self.comment_navigator_item_collapsed_file(item);
+        let leaves_revealed_file = self
+            .revealed_reviewed_file
+            .as_ref()
+            .is_some_and(|revealed| {
+                item.path.as_deref().map(Path::new) != Some(revealed.as_path())
+            });
+        if collapsed_idx.is_some() || leaves_revealed_file {
+            match collapsed_idx {
+                Some(idx) => self.reveal_reviewed_file(idx),
+                None => self.revealed_reviewed_file = None,
+            }
+            self.rebuild_annotations();
+            if let Some(row) = self.line_annotations.iter().position(|annotation| {
+                Self::comment_navigator_key(annotation).as_ref() == Some(&item.key)
+            }) {
+                target_annotation = row;
+            }
+        }
+        self.move_cursor_to_annotation(target_annotation);
         if let Some(file_idx) = file_idx {
             let file_changed = self.diff_state.current_file_idx != file_idx;
             self.diff_state.current_file_idx = file_idx;
