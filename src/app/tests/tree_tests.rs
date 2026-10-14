@@ -400,3 +400,45 @@ fn compact_folders_startup_keeps_selection_on_current_file() {
         matches!(app.get_selected_tree_item(), Some(FileTreeItem::File { file_idx, .. }) if file_idx == current_file_idx)
     );
 }
+
+/// Left-clicks the first row of the file tree, which is the `src` folder.
+fn click_src_folder(click_toggles_folders: bool) -> App {
+    let mut app = app_with(&["src/a.rs", "src/b.rs"]);
+    app.sort_files_by_directory(true);
+    app.expand_all_dirs();
+    app.click_toggles_folders = click_toggles_folders;
+    app.file_list_inner_area = Some(ratatui::layout::Rect::new(0, 0, 30, 10));
+    app.focused_panel = FocusedPanel::Diff;
+
+    crate::handler::handle_mouse_event(
+        &mut app,
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: 1,
+            row: 0,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        },
+    );
+    app
+}
+
+#[test]
+fn test_click_on_folder_toggles_it_by_default() {
+    let app = click_src_folder(true);
+
+    assert!(!app.expanded_dirs.contains("src"));
+    assert_eq!(rendered_tree(&app), vec![("src/".to_string(), 0)]);
+}
+
+#[test]
+fn test_click_on_folder_only_selects_it_when_click_toggling_is_off() {
+    let app = click_src_folder(false);
+
+    assert!(app.expanded_dirs.contains("src"));
+    assert_eq!(app.file_list_state.selected(), 0);
+    assert_eq!(app.focused_panel, FocusedPanel::FileList);
+    assert!(matches!(
+        app.get_selected_tree_item(),
+        Some(FileTreeItem::Directory { path, .. }) if path == "src"
+    ));
+}
