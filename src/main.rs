@@ -698,6 +698,11 @@ fn main() -> anyhow::Result<()> {
                                 app.toggle_show_reviewed();
                                 continue;
                             }
+                            // `<leader>x` shows the whole file or only its changes, like `:expand`.
+                            crossterm::event::KeyCode::Char('x') => {
+                                app.toggle_file_expansion();
+                                continue;
+                            }
                             _ => {}
                         }
                         // Otherwise fall through to normal handling

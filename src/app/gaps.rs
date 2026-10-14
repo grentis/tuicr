@@ -359,6 +359,87 @@ impl App {
         }
     }
 
+    /// `:expand`: open every gap around the current file's changes, or close
+    /// them all if all are open. The cursor keeps its source line.
+    pub fn toggle_file_expansion(&mut self) {
+        let file_idx = self.diff_state.current_file_idx;
+        let Some(file) = self.diff_files.get(file_idx) else {
+            self.set_warning("No file to expand");
+            return;
+        };
+        let name = file.display_path().display().to_string();
+        if file.hunks.is_empty() {
+            self.set_message(format!("Nothing to expand in {name}"));
+            return;
+        }
+        if self.should_collapse_file(file_idx) {
+            self.set_message(format!("{name} is collapsed as reviewed"));
+            return;
+        }
+        let hunk_count = file.hunks.len();
+
+        // The end-of-file gap needs the file's length, which is fetched lazily.
+        self.ensure_file_line_count_cached(file_idx);
+        let last_gap = if self.eof_gap_enabled() {
+            hunk_count
+        } else {
+            hunk_count - 1
+        };
+        let gaps: Vec<(GapId, u32)> = (0..=last_gap)
+            .map(|hunk_idx| GapId { file_idx, hunk_idx })
+            .filter_map(|gap_id| {
+                let size = self.gap_size(&gap_id)?;
+                (size > 0).then_some((gap_id, size))
+            })
+            .collect();
+        if gaps.is_empty() {
+            self.set_message(format!("{name} has no hidden lines"));
+            return;
+        }
+
+        let anchor = self.get_line_at_cursor();
+        let all_open = gaps.iter().all(|(gap_id, size)| {
+            let shown = self.expanded_top.get(gap_id).map_or(0, Vec::len)
+                + self.expanded_bottom.get(gap_id).map_or(0, Vec::len);
+            shown >= *size as usize
+        });
+
+        if all_open {
+            for (gap_id, _) in &gaps {
+                self.expanded_top.remove(gap_id);
+                self.expanded_bottom.remove(gap_id);
+            }
+            self.rebuild_annotations();
+            self.set_message(format!("Showing only the changes in {name}"));
+        } else {
+            let mut failed = false;
+            for (gap_id, _) in gaps {
+                if let Err(e) = self.expand_gap(gap_id, ExpandDirection::Both, None) {
+                    self.set_error(format!("Failed to expand {name}: {e}"));
+                    failed = true;
+                    break;
+                }
+            }
+            if !failed {
+                self.set_message(format!(
+                    "Showing all of {name} \u{00b7} :expand or {}x again to collapse",
+                    self.leader_key
+                ));
+            }
+        }
+
+        // Rows above the cursor changed: find its line again and centre it.
+        if let Some((line, side)) = anchor
+            && let FindSourceLineResult::Exact(row) | FindSourceLineResult::Nearest(row) =
+                self.find_source_line_in_diff(line, side)
+        {
+            self.diff_state.cursor_line = row;
+        }
+        self.diff_state.cursor_line = self.diff_state.cursor_line.min(self.max_cursor_line());
+        self.ensure_cursor_visible();
+        self.center_cursor();
+    }
+
     /// Collapse an expanded gap
     pub fn collapse_gap(&mut self, gap_id: GapId) {
         self.expanded_top.remove(&gap_id);
