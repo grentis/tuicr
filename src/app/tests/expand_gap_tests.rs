@@ -1853,6 +1853,144 @@ fn comment_navigator_shows_only_locations_by_default() {
     assert!(!rows[0].contains("@alice"), "{rows:?}");
 }
 
+/// Three files with `b.rs` already reviewed, the cursor on `file`.
+fn app_reviewing(file: usize, advance: bool) -> App {
+    let files = vec![
+        make_file_with_hunks("a.rs", vec![make_hunk(1, 2)]),
+        make_file_with_hunks("b.rs", vec![make_hunk(1, 2)]),
+        make_file_with_hunks("c.rs", vec![make_hunk(1, 2)]),
+    ];
+    let mut app = build_app_with_files(files, 10);
+    app.jump_to_next_unreviewed = advance;
+    app.session
+        .files
+        .get_mut(&PathBuf::from("b.rs"))
+        .unwrap()
+        .reviewed = true;
+    app.rebuild_annotations();
+    app.jump_to_file(file);
+    app
+}
+
+#[test]
+fn marking_reviewed_keeps_the_cursor_on_the_file_by_default() {
+    let mut app = app_reviewing(0, false);
+
+    app.toggle_reviewed();
+
+    assert_eq!(app.diff_state.current_file_idx, 0);
+}
+
+#[test]
+fn marking_reviewed_moves_on_to_the_next_unreviewed_file() {
+    let mut app = app_reviewing(0, true);
+
+    app.toggle_reviewed();
+
+    assert!(app.session.is_file_reviewed(&PathBuf::from("a.rs")));
+    // b.rs is already reviewed, so it is skipped.
+    assert_eq!(app.diff_state.current_file_idx, 2);
+    // Where `}` lands: the file's first row past its header decoration.
+    let header = app.calculate_file_scroll_offset(2);
+    assert!(
+        (header..header + 3).contains(&app.diff_state.cursor_line),
+        "cursor {} far from c.rs at {header}",
+        app.diff_state.cursor_line
+    );
+}
+
+#[test]
+fn marking_reviewed_wraps_round_to_the_first_unreviewed_file() {
+    let mut app = app_reviewing(2, true);
+
+    app.toggle_reviewed();
+
+    assert_eq!(app.diff_state.current_file_idx, 0);
+}
+
+#[test]
+fn marking_the_last_unreviewed_file_stays_on_it() {
+    let mut app = app_reviewing(2, true);
+    app.session
+        .files
+        .get_mut(&PathBuf::from("a.rs"))
+        .unwrap()
+        .reviewed = true;
+    app.rebuild_annotations();
+
+    app.toggle_reviewed();
+
+    assert_eq!(app.diff_state.current_file_idx, 2);
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("All files reviewed")
+    );
+}
+
+#[test]
+fn marking_reviewed_names_the_file_it_moved_away_from() {
+    let mut app = app_reviewing(0, true);
+
+    app.toggle_reviewed();
+
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("a.rs reviewed")
+    );
+}
+
+#[test]
+fn ctrl_o_goes_back_to_the_file_just_marked() {
+    let mut app = app_reviewing(0, true);
+    app.toggle_reviewed();
+    assert_eq!(app.diff_state.current_file_idx, 2);
+
+    app.jump_to_last_marked_reviewed();
+
+    assert_eq!(app.diff_state.current_file_idx, 0);
+    // Going back does not unmark it; `r` there does.
+    assert!(app.session.is_file_reviewed(&PathBuf::from("a.rs")));
+}
+
+#[test]
+fn ctrl_o_has_nowhere_to_go_before_a_moving_mark() {
+    let mut app = app_reviewing(0, false);
+    app.toggle_reviewed();
+
+    app.jump_to_last_marked_reviewed();
+
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("No file marked yet")
+    );
+}
+
+#[test]
+fn unmarking_reviewed_does_not_move_on() {
+    let mut app = app_reviewing(1, true);
+
+    app.toggle_reviewed();
+
+    assert!(!app.session.is_file_reviewed(&PathBuf::from("b.rs")));
+    assert_eq!(app.diff_state.current_file_idx, 1);
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("b.rs unmarked")
+    );
+}
+
 #[test]
 fn comment_navigator_includes_remote_review_summary() {
     use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary};

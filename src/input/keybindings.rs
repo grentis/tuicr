@@ -651,6 +651,17 @@ mod tests {
     }
 
     #[test]
+    fn should_map_ctrl_o_to_the_last_marked_reviewed_file() {
+        assert_eq!(
+            map_normal_mode(
+                KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+                DEFAULT_LEADER_KEY
+            ),
+            Action::JumpToLastMarkedReviewed
+        );
+    }
+
+    #[test]
     fn should_map_filter_keys_when_the_file_tree_is_focused() {
         assert_eq!(
             map_file_tree_mode(key(KeyCode::Char('i')), DEFAULT_LEADER_KEY),
