@@ -1,4 +1,5 @@
 use super::*;
+use crate::forge::traits::{PrSessionKey, PullRequestDetails};
 
 impl App {
     /// Open the PR in the default browser (`:open`, `<leader>o`).
@@ -12,6 +13,16 @@ impl App {
             Ok(()) => self.set_message(format!("Opened {url}")),
             Err(e) => self.set_warning(format!("Failed to open the browser: {e}")),
         }
+    }
+
+    /// The open PR and its details, when both name the same PR.
+    pub(in crate::app) fn open_pr_target(&self) -> Option<(PrSessionKey, PullRequestDetails)> {
+        let DiffSource::PullRequest(pr) = &self.diff_source else {
+            return None;
+        };
+        let details = self.pr_info.as_ref()?.details.clone();
+        (details.repository == pr.key.repository && details.number == pr.key.number)
+            .then(|| (pr.key.clone(), details))
     }
 
     /// Re-enter PR mode after we've already opened a PR via the selector.
@@ -83,6 +94,7 @@ impl App {
         // match the local-mode UX. We mirror `commit_list` and
         // `review_commits` into shared App state so the existing
         // inline_commit_selector renderer Just Works.
+        self.reset_mentions(review_metadata.viewer_login.clone());
         let since_last_review_message = self.apply_pr_commit_selector(commits, review_metadata);
 
         // Ensure session has all files registered after the swap. A strict

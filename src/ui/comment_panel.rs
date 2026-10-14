@@ -633,6 +633,85 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     area
 }
 
+/// The `@` list under the comment cursor, aligned with the `@`, or above it.
+pub fn render_mention_list(frame: &mut Frame, app: &App) {
+    use crate::app::{InputMode, MENTION_LIST_MAX_ROWS};
+    use crate::ui::commit_row::CURSOR_GLYPH;
+
+    if app.input_mode != InputMode::Comment {
+        return;
+    }
+    let (Some(state), Some((cursor_x, cursor_y))) =
+        (app.mention.as_ref(), app.comment_cursor_screen_pos)
+    else {
+        return;
+    };
+    let screen = frame.area();
+    let rows = state.candidates.len().min(MENTION_LIST_MAX_ROWS);
+    if rows == 0 || screen.width < 8 {
+        return;
+    }
+    let first = state.selected.saturating_sub(rows - 1);
+    let visible = &state.candidates[first..first + rows];
+
+    let content_width = visible
+        .iter()
+        .map(|c| {
+            let name = c.name.as_deref().map_or(0, |n| n.width() + 2);
+            c.login.width() + 3 + name
+        })
+        .max()
+        .unwrap_or(0);
+    let width = (content_width as u16 + 2).min(screen.width);
+    let height = rows as u16 + 2;
+
+    let at_x = cursor_x.saturating_sub(state.query.width() as u16 + 1);
+    let x = at_x.min(screen.right().saturating_sub(width));
+    // The bottom row is the status bar.
+    let below = cursor_y + 1;
+    let y = if below + height < screen.bottom() {
+        below
+    } else {
+        cursor_y.saturating_sub(height)
+    };
+    let area = Rect::new(x, y, width, height).intersection(screen);
+
+    let lines: Vec<Line<'_>> = visible
+        .iter()
+        .enumerate()
+        .map(|(offset, candidate)| {
+            let selected = first + offset == state.selected;
+            let marker = if selected { CURSOR_GLYPH } else { " " };
+            let style = if selected {
+                styles::selected_style(&app.theme)
+            } else {
+                Style::default().fg(app.theme.fg_primary)
+            };
+            let mut spans = vec![Span::styled(
+                format!("{marker} @{}", candidate.login),
+                style,
+            )];
+            if let Some(name) = candidate.name.as_deref() {
+                let name_style = if selected {
+                    style
+                } else {
+                    Style::default().fg(app.theme.fg_secondary)
+                };
+                spans.push(Span::styled(format!("  {name}"), name_style));
+            }
+            Line::from(spans)
+        })
+        .collect();
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(styles::panel_style(&app.theme))
+            .block(Block::default().borders(Borders::ALL)),
+        area,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

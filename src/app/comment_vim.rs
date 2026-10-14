@@ -130,6 +130,7 @@ impl App {
             self.comment_buffer = text;
             self.comment_cursor = cursor;
         }
+        self.refresh_mention();
     }
 
     /// Insert a soft tab (`comment_tab_width` spaces) into the vim overlay,
@@ -151,6 +152,7 @@ impl App {
             self.comment_buffer = text;
             self.comment_cursor = cursor;
         }
+        self.refresh_mention();
     }
 
     /// Enable/disable vim editing at runtime (e.g. `:vim`); takes effect on the

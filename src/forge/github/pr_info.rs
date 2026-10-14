@@ -26,7 +26,7 @@ pub(crate) struct GhPullRequestInfoResponse {
     #[serde(default)]
     pub merge_state_status: Option<String>,
     #[serde(default, deserialize_with = "deserialize_review_requests")]
-    review_requests: Vec<String>,
+    review_requests: Vec<ReviewRequest>,
     #[serde(default, deserialize_with = "deserialize_latest_reviews")]
     latest_reviews: Vec<PullRequestReviewStatus>,
     #[serde(default, deserialize_with = "deserialize_status_checks")]
@@ -199,7 +199,17 @@ impl GhPullRequestInfoResponse {
             review_decision: non_empty(self.review_decision),
             mergeable: non_empty(self.mergeable),
             merge_state: non_empty(self.merge_state_status),
-            requested_reviewers: self.review_requests,
+            requested_reviewers: self
+                .review_requests
+                .iter()
+                .map(|request| request.label.clone())
+                .collect(),
+            requested_users: self
+                .review_requests
+                .into_iter()
+                .filter(|request| !request.is_team)
+                .map(|request| request.label)
+                .collect(),
             latest_reviews: self.latest_reviews,
             checks: self.status_check_rollup,
             issue_comments: self.issue_comments,
@@ -207,9 +217,16 @@ impl GhPullRequestInfoResponse {
     }
 }
 
+/// A requested reviewer as displayed, remembering whether it is a team.
+#[derive(Debug)]
+struct ReviewRequest {
+    label: String,
+    is_team: bool,
+}
+
 fn deserialize_review_requests<'de, D>(
     deserializer: D,
-) -> std::result::Result<Vec<String>, D::Error>
+) -> std::result::Result<Vec<ReviewRequest>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -298,14 +315,16 @@ fn issue_comment_label(comment: GhIssueComment) -> Option<PullRequestIssueCommen
     })
 }
 
-fn review_request_flat_label(node: GhReviewRequestFlat) -> Option<String> {
-    match node.type_name.as_deref() {
-        Some("Team") => node
-            .name
+fn review_request_flat_label(node: GhReviewRequestFlat) -> Option<ReviewRequest> {
+    let is_team = node.type_name.as_deref() == Some("Team");
+    let label = if is_team {
+        node.name
             .filter(|s| !s.is_empty())
-            .or(node.slug.filter(|s| !s.is_empty())),
-        _ => node.login.filter(|s| !s.is_empty()),
-    }
+            .or(node.slug.filter(|s| !s.is_empty()))
+    } else {
+        node.login.filter(|s| !s.is_empty())
+    }?;
+    Some(ReviewRequest { label, is_team })
 }
 
 fn latest_review_status(review: GhLatestReview) -> Option<PullRequestReviewStatus> {

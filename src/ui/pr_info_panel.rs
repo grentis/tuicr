@@ -456,6 +456,7 @@ mod tests {
             mergeable: Some("MERGEABLE".to_string()),
             merge_state: Some("BLOCKED".to_string()),
             requested_reviewers: vec!["bob".to_string()],
+            requested_users: vec!["bob".to_string()],
             latest_reviews: vec![PullRequestReviewStatus {
                 author: Some("carol".to_string()),
                 state: "APPROVED".to_string(),

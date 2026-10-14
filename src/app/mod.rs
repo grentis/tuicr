@@ -1062,6 +1062,8 @@ pub struct ViewedSyncWorker {
     pub tx: std::sync::mpsc::Sender<ViewedSyncRequest>,
 }
 
+pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffViewMode {
     Unified,
@@ -1351,6 +1353,10 @@ pub struct App {
     pub viewed_sync: Option<ViewedSyncWorker>,
     /// That worker's failures.
     pub viewed_sync_rx: Option<std::sync::mpsc::Receiver<ViewedSyncEvent>>,
+    /// `@` suggestion list open in the comment box (PR reviews only).
+    pub mention: Option<MentionState>,
+    /// Forge lookups behind that list, reset when a PR opens.
+    pub mention_lookup: MentionLookup,
     /// PR session whose viewed state was already read (once per session).
     pub viewed_seeded: Option<crate::forge::traits::PrSessionKey>,
     /// That read while it is in flight.
@@ -1955,6 +1961,7 @@ mod editor_target;
 mod file_filter;
 mod gaps;
 mod init;
+mod mentions;
 mod modes;
 mod navigation;
 mod pr;
