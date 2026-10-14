@@ -863,6 +863,7 @@ where
             review_decision,
             mergeable,
             merge_state: None,
+            requested_users: requested_reviewers.clone(),
             requested_reviewers,
             latest_reviews,
             checks,

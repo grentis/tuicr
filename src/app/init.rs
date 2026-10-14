@@ -561,6 +561,8 @@ impl App {
             pr_threads_rx: None,
             viewed_sync: None,
             viewed_sync_rx: None,
+            mention: None,
+            mention_lookup: MentionLookup::default(),
             viewed_seeded: None,
             viewed_seed_rx: None,
             forge_config: crate::config::ForgeConfig::default(),
@@ -989,6 +991,7 @@ impl App {
         app.canonical_resolved = true;
         app.current_pr_head = Some(details_for_threads.head_sha.clone());
         app.commit_selection_start = commit_selection;
+        app.reset_mentions(review_metadata.viewer_login.clone());
         let since_last_review_message =
             app.apply_pr_commit_selector(commits_for_selector, review_metadata);
         if matches!(&app.diff_source, DiffSource::PullRequest(_))

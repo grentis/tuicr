@@ -75,6 +75,9 @@ pub struct ForgeConfig {
     /// Keep `r` and GitHub's per-file "Viewed" checkbox in step on a pull
     /// request. Off by default: it writes to GitHub as you.
     pub sync_viewed: bool,
+    /// Extra comment features for pull requests: `@` mention suggestions
+    /// while commenting. Off by default.
+    pub extended_comments: bool,
 }
 
 impl Default for ForgeConfig {
@@ -82,6 +85,7 @@ impl Default for ForgeConfig {
         Self {
             comment_type_prefix: true,
             sync_viewed: false,
+            extended_comments: false,
         }
     }
 }
@@ -300,7 +304,7 @@ const KNOWN_KEYS: &[&str] = &[
     "export",
 ];
 
-const FORGE_KNOWN_KEYS: &[&str] = &["comment_type_prefix", "sync_viewed"];
+const FORGE_KNOWN_KEYS: &[&str] = &["comment_type_prefix", "sync_viewed", "extended_comments"];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
     "intro",
@@ -695,6 +699,11 @@ fn parse_forge(value: &Value, warnings: &mut Vec<String>) -> Option<ForgeConfig>
 
     if let Some(v) = read_section_bool(table, "forge", "sync_viewed", warnings) {
         cfg.sync_viewed = v;
+        any_override = true;
+    }
+
+    if let Some(v) = read_section_bool(table, "forge", "extended_comments", warnings) {
+        cfg.extended_comments = v;
         any_override = true;
     }
 

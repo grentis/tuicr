@@ -492,6 +492,14 @@ pub struct PullRequestReviewRecord {
     pub commit_oid: Option<String>,
 }
 
+/// A user the forge accepts in an `@` mention on a repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MentionCandidate {
+    pub login: String,
+    /// Display name, when the user has set one.
+    pub name: Option<String>,
+}
+
 /// A reviewer's latest response on a pull request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequestReviewStatus {
@@ -529,6 +537,8 @@ pub struct PullRequestInfo {
     pub mergeable: Option<String>,
     pub merge_state: Option<String>,
     pub requested_reviewers: Vec<String>,
+    /// `requested_reviewers` without teams: the ones `@login` can name.
+    pub requested_users: Vec<String>,
     pub latest_reviews: Vec<PullRequestReviewStatus>,
     pub checks: Vec<PullRequestCheckStatus>,
     pub issue_comments: Vec<PullRequestIssueComment>,
@@ -543,6 +553,7 @@ impl PullRequestInfo {
             mergeable: None,
             merge_state: None,
             requested_reviewers: Vec::new(),
+            requested_users: Vec::new(),
             latest_reviews: Vec::new(),
             checks: Vec::new(),
             issue_comments: Vec::new(),
@@ -650,6 +661,16 @@ pub trait ForgeBackend {
         Err(crate::error::TuicrError::UnsupportedOperation(
             "This forge does not track per-file viewed state".into(),
         ))
+    }
+
+    /// Users matching `query` who can be mentioned on `pr`'s repository, best
+    /// first. Only GitHub has such a list; the default returns none.
+    fn search_mentionable_users(
+        &self,
+        _pr: &PullRequestDetails,
+        _query: &str,
+    ) -> Result<Vec<MentionCandidate>> {
+        Ok(Vec::new())
     }
 
     /// Create a review on the PR. The payload-building details (event field

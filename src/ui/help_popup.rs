@@ -658,6 +658,10 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         comment_mode_row("Cmd-Left/Right", "Line start/end (macOS)"),
         comment_mode_row("Esc/Ctrl-C", "Cancel"),
         comment_mode_row(
+            "@",
+            "Suggest people to mention ([forge] extended_comments; Up/Down, Tab/Enter insert, Esc close)",
+        ),
+        comment_mode_row(
             "comment_vim",
             if app.comment_vim_enabled {
                 "Vim ON (i/a:insert Esc:normal hjkl dd/ciw/x u; S-Enter:save S-Esc:discard :w/:q)"

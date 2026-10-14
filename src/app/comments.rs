@@ -962,6 +962,8 @@ impl App {
         self.comment_is_review_level = false;
         self.comment_is_file_level = file_level;
         self.comment_line = line;
+        self.mention = None;
+        self.mention_lookup.dismissed_at = None;
     }
 
     pub fn enter_review_comment_mode(&mut self) {
@@ -975,6 +977,8 @@ impl App {
         self.comment_line = None;
         self.comment_line_range = None;
         self.editing_comment_id = None;
+        self.mention = None;
+        self.mention_lookup.dismissed_at = None;
     }
 
     pub fn exit_comment_mode(&mut self) {
@@ -985,6 +989,8 @@ impl App {
         self.comment_vim_editor = None;
         self.comment_vim_command = None;
         self.comment_vim_pending = CommentVimPending::None;
+        self.mention = None;
+        self.mention_lookup.dismissed_at = None;
         self.comment_is_review_level = false;
         self.editing_comment_id = None;
         self.comment_line_range = None;
