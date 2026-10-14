@@ -2032,6 +2032,16 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_list_comment_replies() {
+        let outcome = parse_config("list_comment_replies = true\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.list_comment_replies),
+            Some(true)
+        );
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
     fn should_parse_list_reviewed_file_comments() {
         let outcome = parse_config("list_reviewed_file_comments = true\n");
         assert_eq!(
