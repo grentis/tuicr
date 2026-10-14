@@ -2133,6 +2133,16 @@ mod tests {
         assert_eq!(outcome.warnings.len(), 3);
     }
 
+    #[test]
+    fn should_parse_click_toggles_folders() {
+        let outcome = parse_config("click_toggles_folders = false\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.click_toggles_folders),
+            Some(false)
+        );
+        assert!(outcome.warnings.is_empty());
+    }
+
     // forge
 
     #[test]
