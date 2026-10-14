@@ -172,6 +172,7 @@ Shown below the file tree when local comments or visible remote PR threads exist
 | Key | Action |
 |-----|--------|
 | `r` | Toggle file reviewed (syncs with GitHub's *Viewed* checkbox via `[forge] sync_viewed`) |
+| `Ctrl-o` | With `jump_to_next_unreviewed`, go back to the file the last `r` marked, to look at it again or unmark it with `r` |
 | `R` | Toggle hunk reviewed |
 | `c` | Add line comment (or file comment if not on a diff line); on a GitHub thread, reply to it |
 | `C` | Add file comment |
