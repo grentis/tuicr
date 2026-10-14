@@ -592,6 +592,35 @@ where
         Ok(all)
     }
 
+    fn search_mentionable_users(
+        &self,
+        pr: &PullRequestDetails,
+        query: &str,
+    ) -> Result<Vec<crate::forge::traits::MentionCandidate>> {
+        use super::mentionable_users::{QUERY, SEARCH_LIMIT, parse};
+        // `-f` keeps the text a string; `-F` would parse `123` and `@x`.
+        let mut args = vec![
+            "api".to_string(),
+            "graphql".to_string(),
+            "-f".to_string(),
+            format!("query={QUERY}"),
+            "-f".to_string(),
+            format!("owner={}", pr.repository.owner),
+            "-f".to_string(),
+            format!("name={}", pr.repository.name),
+            "-f".to_string(),
+            format!("q={query}"),
+            "-F".to_string(),
+            format!("first={SEARCH_LIMIT}"),
+        ];
+        if pr.repository.host != DEFAULT_GITHUB_HOST {
+            args.push("--hostname".to_string());
+            args.push(pr.repository.host.clone());
+        }
+        let output = self.run_gh(args, &pr.repository.host)?;
+        parse(&output)
+    }
+
     fn set_file_viewed(&self, pr: &PullRequestDetails, path: &Path, viewed: bool) -> Result<()> {
         let node_id = self.pull_request_node_id(pr)?;
         // GraphQL only: no REST equivalent.

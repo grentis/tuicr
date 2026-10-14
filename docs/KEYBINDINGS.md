@@ -250,6 +250,26 @@ viewed, then changed by a later commit — does not count as viewed. See
 | `Ctrl-w` / `Alt-Backspace` / `Cmd-Backspace` | Delete word |
 | `Ctrl-u` | Clear line |
 | `Esc` / `Ctrl-c` | Cancel |
+| `@` | Suggest people to mention (PR reviews with `[forge] extended_comments`, see below) |
+
+### Mentioning people
+
+With `extended_comments = true` under `[forge]` in `config.toml`, typing `@` in a PR
+review opens a list of people to mention, next to the cursor. The PR's author is first and highlighted, followed by its requested
+reviewers, reviewers and commenters, so `@` then `Enter` mentions the author.
+Typing more of a name narrows the list, and on GitHub it also adds everyone
+else on the repository who matches by username or display name (the same
+search GitHub's own comment box uses). You are never suggested.
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` (`Ctrl-p` / `Ctrl-n`) | Move the highlight |
+| `Tab` / `Enter` | Insert the highlighted `@username` |
+| `Esc` | Close the list; keep typing as plain text |
+
+The list takes those keys only while it is open; otherwise they do what the
+table above says. In vim mode it works in Insert mode. Local reviews, and PR
+reviews with the setting off, have no list, so `@` there is plain text.
 
 In the default editor, Up/Down move through wrapped rows and explicit newlines.
 The cursor keeps its column where possible and restores it after crossing a

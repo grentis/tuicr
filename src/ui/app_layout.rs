@@ -86,7 +86,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         help_popup::render_help(frame, app);
     }
 
-    // Comment input is now rendered inline in the diff view
+    // Comment input renders inline in the diff view, under the `@` list.
+    comment_panel::render_mention_list(frame, app);
 
     if let Some(confirm) = active_confirm(app) {
         comment_panel::render_confirm_dialog(frame, app, confirm.prompt());

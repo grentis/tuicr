@@ -1,4 +1,5 @@
 pub mod gh;
+pub mod mentionable_users;
 pub mod models;
 pub mod pr_info;
 pub mod review_metadata;

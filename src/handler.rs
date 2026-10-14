@@ -1275,6 +1275,31 @@ pub fn handle_comment_action(app: &mut App, action: Action) {
         Action::Quit => app.should_quit = true,
         _ => {}
     }
+    app.refresh_mention();
+}
+
+/// Keys for the open `@` list: Up/Down (Ctrl-P/Ctrl-N) move, Tab/Enter insert,
+/// Esc closes. Returns whether the key was used; in vim Normal mode none is.
+pub fn handle_mention_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    if app.input_mode != InputMode::Comment || app.mention.is_none() {
+        return false;
+    }
+    if app.comment_vim_enabled && app.comment_vim_in_normal_mode() {
+        return false;
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        KeyCode::Up => app.mention_select_prev(),
+        KeyCode::Char('p') if ctrl => app.mention_select_prev(),
+        KeyCode::Down => app.mention_select_next(),
+        KeyCode::Char('n') if ctrl => app.mention_select_next(),
+        KeyCode::Tab | KeyCode::Char('\t') => app.accept_mention(),
+        KeyCode::Enter if key.modifiers.is_empty() => app.accept_mention(),
+        KeyCode::Esc if key.modifiers.is_empty() => app.dismiss_mention(),
+        _ => return false,
+    }
+    true
 }
 
 /// Handle actions in Confirm mode (Y/N prompts)
