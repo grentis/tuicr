@@ -1807,6 +1807,7 @@ fn handle_shared_normal_action(app: &mut App, action: Action) {
         Action::NextComment => app.next_comment(),
         Action::PrevComment => app.prev_comment(),
         Action::ToggleReviewed => app.toggle_reviewed(),
+        Action::JumpToLastMarkedReviewed => app.jump_to_last_marked_reviewed(),
         Action::ToggleHunkReviewed => app.toggle_hunk_reviewed(),
         Action::ToggleFocus => {
             let has_selector = app.has_inline_commit_selector();

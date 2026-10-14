@@ -328,6 +328,11 @@ fn main() -> anyhow::Result<()> {
         .as_ref()
         .and_then(|cfg| cfg.list_comment_replies)
         .unwrap_or(false);
+    app.jump_to_next_unreviewed = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.jump_to_next_unreviewed)
+        .unwrap_or(false);
     app.commit_selection_start = commit_selection;
     app.pending_start_line = cli_args.start_line;
 

@@ -37,6 +37,8 @@ pub enum Action {
 
     // Review actions
     ToggleReviewed,
+    /// With `jump_to_next_unreviewed`, go back to the file the last `r` marked.
+    JumpToLastMarkedReviewed,
     ToggleHunkReviewed,
     AddLineComment,
     AddFileComment,
@@ -274,6 +276,7 @@ fn map_normal_mode_with_q_quits(key: KeyEvent, leader_key: char, q_quits: bool) 
         // Review actions
         (KeyCode::Char('r'), KeyModifiers::NONE) => Action::ToggleReviewed,
         (KeyCode::Char('R'), _) => Action::ToggleHunkReviewed,
+        (KeyCode::Char('o'), KeyModifiers::CONTROL) => Action::JumpToLastMarkedReviewed,
         (KeyCode::Char('c'), KeyModifiers::NONE) => Action::AddLineComment,
         (KeyCode::Char('C'), _) => Action::AddFileComment,
         (KeyCode::Char('i'), KeyModifiers::NONE) => Action::EditComment,

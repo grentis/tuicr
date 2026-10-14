@@ -557,6 +557,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  Ctrl-o    ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Back to the file r last marked (jump_to_next_unreviewed)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  R         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
