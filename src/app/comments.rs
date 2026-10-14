@@ -964,6 +964,7 @@ impl App {
         self.comment_line = line;
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
+        self.comment_reply = None;
     }
 
     pub fn enter_review_comment_mode(&mut self) {
@@ -980,6 +981,7 @@ impl App {
         self.editing_comment_id = None;
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
+        self.comment_reply = None;
     }
 
     pub fn exit_comment_mode(&mut self) {
@@ -992,6 +994,7 @@ impl App {
         self.comment_vim_pending = CommentVimPending::None;
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
+        self.comment_reply = None;
         self.comment_is_review_level = false;
         self.comment_is_pr_comment = false;
         self.editing_comment_id = None;
@@ -1017,7 +1020,9 @@ impl App {
         let mut autosave_error = None;
 
         // Check if we're editing an existing comment
-        if let Some(editing_id) = &self.editing_comment_id {
+        if let Some(target) = self.comment_reply.take() {
+            message = self.save_thread_reply(target, content);
+        } else if let Some(editing_id) = &self.editing_comment_id {
             if let Some(comment) = self
                 .session
                 .review_comments

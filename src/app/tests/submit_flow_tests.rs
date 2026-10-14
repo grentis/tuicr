@@ -633,6 +633,7 @@ fn make_in_flight(
     SubmitInFlightState {
         event,
         mappable,
+        replies: Vec::new(),
         summary_comment_ids: Vec::new(),
         review_comment_ids: Vec::new(),
         moved_to_summary_count,
