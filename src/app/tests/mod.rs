@@ -26,6 +26,7 @@ mod single_file_view_tests;
 mod submit_flow_tests;
 mod target_selector_tests;
 mod theme_picker_tests;
+mod thread_reply_tests;
 mod tree_tests;
 mod viewed_sync_tests;
 mod visual_selection_tests;

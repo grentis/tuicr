@@ -1463,6 +1463,8 @@ index 1111111..2222222 100644
         /// When set, `run_with_stdin` returns this body as the success output.
         /// Defaults to `CREATE_REVIEW_RESPONSE_JSON` when None.
         stdin_response: Mutex<Option<String>>,
+        /// When set, adding a thread reply fails with this error.
+        thread_reply_error: Mutex<Option<GhCommandError>>,
     }
 
     impl GhCommandRunner for FakeGhRunner {
@@ -1488,7 +1490,14 @@ index 1111111..2222222 100644
                         .find(|a| a.starts_with("query="))
                         .map(String::as_str)
                         .unwrap_or("");
-                    if query.contains("mentionableUsers(") {
+                    if query.contains("addPullRequestReviewThreadReply(") {
+                        match self.thread_reply_error.lock().unwrap().clone() {
+                            Some(error) => Err(error),
+                            None => Ok(THREAD_REPLY_JSON.to_string()),
+                        }
+                    } else if query.contains("submitPullRequestReview(") {
+                        Ok(SUBMIT_REVIEW_JSON.to_string())
+                    } else if query.contains("mentionableUsers(") {
                         Ok(MENTIONABLE_USERS_JSON.to_string())
                     } else if query.contains("viewerViewedState") {
                         Ok(VIEWED_FILES_JSON.to_string())
@@ -1510,6 +1519,8 @@ index 1111111..2222222 100644
                         })
                     }
                 }
+                // Deleting a pending review answers with no body.
+                Some("api") if args.iter().any(|a| a == "DELETE") => Ok(String::new()),
                 // gh api repos/.../pulls/<n>/commits (commit list).
                 Some("api")
                     if args
@@ -2901,6 +2912,158 @@ Match host github-work
             payload["comments"][0].get("comment_id").is_none(),
             "comment_id should not leak into the JSON payload"
         );
+    }
+
+    const PENDING_REVIEW_JSON: &str = r#"{"id": 123456, "node_id": "PRR_pending", "html_url": "https://github.com/agavra/tuicr/pull/125#pullrequestreview-123456", "state": "PENDING"}"#;
+    const THREAD_REPLY_JSON: &str =
+        r#"{"data":{"addPullRequestReviewThreadReply":{"comment":{"id":"PRRC_1"}}}}"#;
+    const SUBMIT_REVIEW_JSON: &str =
+        r#"{"data":{"submitPullRequestReview":{"pullRequestReview":{"state":"APPROVED"}}}}"#;
+
+    fn thread_reply(thread_id: &str, body: &str) -> crate::forge::submit::ThreadReply {
+        crate::forge::submit::ThreadReply {
+            thread_id: thread_id.to_string(),
+            body: body.to_string(),
+            comment_id: format!("local-{thread_id}"),
+        }
+    }
+
+    /// Value of `-f name=...` in a gh call.
+    fn field<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+        let prefix = format!("{name}=");
+        args.windows(2)
+            .find(|w| w[0] == "-f" && w[1].starts_with(&prefix))
+            .map(|w| &w[1][prefix.len()..])
+    }
+
+    fn submit_with_replies(
+        backend: &GitHubGhBackend<FakeGhRunner>,
+        event: SubmitEvent,
+    ) -> Result<GhCreateReviewResponse> {
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+        let comments = vec![inline(42, "new thread")];
+        backend.create_review_with_replies(
+            &details,
+            CreateReviewRequest {
+                event,
+                commit_id: "abcdef1234567890",
+                body: "review body",
+                comments: &comments,
+            },
+            &[
+                thread_reply("PRRT_a", "first"),
+                thread_reply("PRRT_b", "@123"),
+            ],
+        )
+    }
+
+    fn replies_backend() -> GitHubGhBackend<FakeGhRunner> {
+        let runner = FakeGhRunner::default();
+        *runner.stdin_response.lock().unwrap() = Some(PENDING_REVIEW_JSON.to_string());
+        GitHubGhBackend::with_runner(Some(repo()), runner)
+    }
+
+    #[test]
+    fn should_add_replies_to_a_pending_review_before_submitting_it() {
+        // given
+        let backend = replies_backend();
+        // when
+        let response = submit_with_replies(&backend, SubmitEvent::Approve).unwrap();
+        // then — the review was created pending, with its inline comments
+        let stdin_calls = backend.runner.stdin_calls.lock().unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&stdin_calls[0].1).unwrap();
+        assert!(payload.get("event").is_none(), "{payload}");
+        assert_eq!(payload["comments"][0]["line"], 42);
+        // and — each reply joined it, in order, then it was submitted
+        let calls = backend.runner.calls.lock().unwrap();
+        let graphql = graphql_calls(&calls);
+        assert_eq!(graphql.len(), 3);
+        assert_eq!(field(&graphql[0], "review"), Some("PRR_pending"));
+        assert_eq!(field(&graphql[0], "thread"), Some("PRRT_a"));
+        assert_eq!(field(&graphql[0], "body"), Some("first"));
+        assert_eq!(field(&graphql[1], "thread"), Some("PRRT_b"));
+        assert_eq!(field(&graphql[1], "body"), Some("@123"));
+        assert!(
+            field(&graphql[2], "query")
+                .unwrap()
+                .contains("submitPullRequestReview(")
+        );
+        assert_eq!(field(&graphql[2], "event"), Some("APPROVE"));
+        assert_eq!(response.id, 123456);
+        assert_eq!(response.state, "APPROVE");
+    }
+
+    #[test]
+    fn should_leave_a_draft_with_replies_pending() {
+        // given
+        let backend = replies_backend();
+        // when
+        let response = submit_with_replies(&backend, SubmitEvent::Draft).unwrap();
+        // then
+        let calls = backend.runner.calls.lock().unwrap();
+        let graphql = graphql_calls(&calls);
+        assert_eq!(graphql.len(), 2);
+        assert!(graphql.iter().all(|args| {
+            !field(args, "query")
+                .unwrap()
+                .contains("submitPullRequestReview(")
+        }));
+        assert_eq!(response.state, "PENDING");
+    }
+
+    #[test]
+    fn should_delete_the_pending_review_when_a_reply_fails() {
+        // given
+        let backend = replies_backend();
+        *backend.runner.thread_reply_error.lock().unwrap() = Some(GhCommandError::Failed {
+            status: Some(1),
+            stderr: "GraphQL: Could not resolve to a node".to_string(),
+        });
+        // when
+        let error = submit_with_replies(&backend, SubmitEvent::Comment).unwrap_err();
+        // then
+        assert!(error.to_string().contains("Could not resolve"), "{error}");
+        let calls = backend.runner.calls.lock().unwrap();
+        let delete = calls
+            .iter()
+            .find(|args| args.iter().any(|a| a == "DELETE"))
+            .expect("the pending review should be deleted");
+        assert_eq!(delete[1], "repos/agavra/tuicr/pulls/125/reviews/123456");
+        assert!(graphql_calls(&calls).iter().all(|args| {
+            !field(args, "query")
+                .unwrap()
+                .contains("submitPullRequestReview(")
+        }));
+    }
+
+    #[test]
+    fn should_create_a_review_directly_when_there_are_no_replies() {
+        // given
+        let runner = FakeGhRunner::default();
+        let backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+        // when
+        backend
+            .create_review_with_replies(
+                &details,
+                CreateReviewRequest {
+                    event: SubmitEvent::Comment,
+                    commit_id: "abcdef1234567890",
+                    body: "review body",
+                    comments: &[],
+                },
+                &[],
+            )
+            .unwrap();
+        // then — one published review, no GraphQL round-trips
+        let payload: serde_json::Value =
+            serde_json::from_str(&backend.runner.stdin_calls.lock().unwrap()[0].1).unwrap();
+        assert_eq!(payload["event"], "COMMENT");
+        assert!(graphql_calls(&backend.runner.calls.lock().unwrap()).is_empty());
     }
 
     #[test]
