@@ -1558,6 +1558,8 @@ pub struct App {
     /// Config `list_reviewed_file_comments`: the navigator also lists collapsed
     /// reviewed files' comments.
     pub list_reviewed_file_comments: bool,
+    /// Config `list_comment_replies`: replies listed under their thread.
+    pub list_comment_replies: bool,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;
@@ -1657,6 +1659,12 @@ pub enum CommentNavigatorKey {
     Remote {
         thread_idx: usize,
     },
+    /// A forge thread's reply (`comment_idx` ≥ 1; 0 is the thread). Only with
+    /// `list_comment_replies`.
+    RemoteReply {
+        thread_idx: usize,
+        comment_idx: usize,
+    },
     RemoteReview {
         summary_idx: usize,
     },
@@ -1680,6 +1688,9 @@ pub struct CommentNavigatorItem {
     /// or the root comment's author for remote threads. `None` only when the
     /// forge did not attach an author (e.g. deleted user).
     pub author: Option<String>,
+    /// Listed under its thread (`list_comment_replies`): a forge reply or a
+    /// local draft answering a thread.
+    pub reply: bool,
 }
 
 #[derive(Debug)]

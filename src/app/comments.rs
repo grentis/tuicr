@@ -109,6 +109,7 @@ impl App {
                     line: None,
                     side: None,
                     author: Some(comment.author.clone()),
+                    reply: false,
                 })
             }
             CommentNavigatorKey::File {
@@ -129,6 +130,7 @@ impl App {
                     line: None,
                     side: None,
                     author: Some(comment.author.clone()),
+                    reply: self.list_comment_replies && comment.reply_to_thread.is_some(),
                 })
             }
             CommentNavigatorKey::Line {
@@ -154,6 +156,7 @@ impl App {
                     line: Some(line),
                     side: Some(side),
                     author: Some(comment.author.clone()),
+                    reply: self.list_comment_replies && comment.reply_to_thread.is_some(),
                 })
             }
             CommentNavigatorKey::Remote { thread_idx } => {
@@ -175,6 +178,35 @@ impl App {
                     line: thread.line,
                     side: Some(side),
                     author,
+                    reply: false,
+                })
+            }
+            CommentNavigatorKey::RemoteReply {
+                thread_idx,
+                comment_idx,
+            } => {
+                let thread = self.forge_review_threads.get(thread_idx)?;
+                let comment = thread.comments.get(comment_idx)?;
+                let muted = self
+                    .session
+                    .remote_comments_visibility
+                    .render_decision(thread)?;
+                let side = match thread.side {
+                    crate::forge::remote_comments::RemoteCommentSide::Right => LineSide::New,
+                    crate::forge::remote_comments::RemoteCommentSide::Left => LineSide::Old,
+                };
+                Some(CommentNavigatorItem {
+                    key: CommentNavigatorKey::RemoteReply {
+                        thread_idx,
+                        comment_idx,
+                    },
+                    kind: CommentNavigatorKind::Remote { muted },
+                    target_annotation,
+                    path: Some(thread.path.clone()),
+                    line: thread.line,
+                    side: Some(side),
+                    author: comment.author.clone(),
+                    reply: true,
                 })
             }
             CommentNavigatorKey::RemoteReview { summary_idx } => {
@@ -187,6 +219,7 @@ impl App {
                     line: None,
                     side: None,
                     author: summary.author.clone(),
+                    reply: false,
                 })
             }
         }
@@ -211,7 +244,7 @@ impl App {
                 last_key = None;
                 continue;
             }
-            let Some(key) = Self::comment_navigator_key(annotation) else {
+            let Some(key) = self.comment_navigator_key_at_row(idx) else {
                 last_key = None;
                 continue;
             };
@@ -227,6 +260,43 @@ impl App {
         }
 
         items
+    }
+
+    /// The navigator key for a diff row; with `list_comment_replies` a thread
+    /// row belongs to the reply drawn there.
+    fn comment_navigator_key_at_row(&self, row: usize) -> Option<CommentNavigatorKey> {
+        match self.line_annotations.get(row)? {
+            AnnotatedLine::RemoteThreadLine {
+                thread_idx,
+                comment_idx,
+            } if self.list_comment_replies && *comment_idx > 0 => {
+                Some(CommentNavigatorKey::RemoteReply {
+                    thread_idx: *thread_idx,
+                    comment_idx: *comment_idx,
+                })
+            }
+            annotation => Self::comment_navigator_key(annotation),
+        }
+    }
+
+    /// The first diff row of the comment, thread or reply `key` names.
+    fn comment_navigator_row_for_key(&self, key: &CommentNavigatorKey) -> Option<usize> {
+        if let CommentNavigatorKey::RemoteReply {
+            thread_idx,
+            comment_idx,
+        } = *key
+        {
+            return self.line_annotations.iter().position(|annotation| {
+                matches!(
+                    annotation,
+                    AnnotatedLine::RemoteThreadLine { thread_idx: t, comment_idx: c }
+                        if *t == thread_idx && *c == comment_idx
+                )
+            });
+        }
+        self.line_annotations
+            .iter()
+            .position(|annotation| Self::comment_navigator_key(annotation).as_ref() == Some(key))
     }
 
     /// Navigator keys for a collapsed file's comments and threads, in the order
@@ -296,6 +366,36 @@ impl App {
                 CommentNavigatorKey::Remote { thread_idx },
             ));
         }
+        // A thread's replies follow it: they share its sort key, and the sort
+        // below is stable.
+        if self.list_comment_replies {
+            by_line = by_line
+                .into_iter()
+                .flat_map(|(order, key)| {
+                    let replies: Vec<_> = match key {
+                        CommentNavigatorKey::Remote { thread_idx } => {
+                            let count = self
+                                .forge_review_threads
+                                .get(thread_idx)
+                                .map_or(0, |thread| thread.comments.len());
+                            (1..count)
+                                .map(|comment_idx| {
+                                    (
+                                        order,
+                                        CommentNavigatorKey::RemoteReply {
+                                            thread_idx,
+                                            comment_idx,
+                                        },
+                                    )
+                                })
+                                .collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                    std::iter::once((order, key)).chain(replies)
+                })
+                .collect();
+        }
 
         by_line.sort_by_key(|(order, _)| *order);
         keys.extend(by_line.into_iter().map(|(_, key)| key));
@@ -326,8 +426,7 @@ impl App {
         }
 
         if self.focused_panel == FocusedPanel::Diff
-            && let Some(annotation) = self.line_annotations.get(self.diff_state.cursor_line)
-            && let Some(key) = Self::comment_navigator_key(annotation)
+            && let Some(key) = self.comment_navigator_key_at_row(self.diff_state.cursor_line)
             && let Some(idx) = items.iter().position(|item| item.key == key)
         {
             self.comment_navigator_state.select(idx);
@@ -406,9 +505,7 @@ impl App {
                 None => self.revealed_reviewed_file = None,
             }
             self.rebuild_annotations();
-            if let Some(row) = self.line_annotations.iter().position(|annotation| {
-                Self::comment_navigator_key(annotation).as_ref() == Some(&item.key)
-            }) {
+            if let Some(row) = self.comment_navigator_row_for_key(&item.key) {
                 target_annotation = row;
             }
         }
