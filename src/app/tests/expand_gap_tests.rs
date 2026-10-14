@@ -1763,6 +1763,49 @@ fn comment_navigator_opens_a_reply_in_a_collapsed_reviewed_file() {
     assert_eq!(app.diff_state.cursor_line, thread_start(&app) + 5);
 }
 
+/// The comment navigator's rows as text, from a full-screen render.
+fn rendered_navigator_rows(app: &mut App) -> Vec<String> {
+    let backend = ratatui::backend::TestBackend::new(140, 40);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| crate::ui::render(frame, app))
+        .expect("draw frame");
+    let buffer = terminal.backend().buffer().clone();
+    let area = app.comment_navigator_inner_area.expect("navigator drawn");
+    (area.y..area.y + area.height)
+        .map(|y| {
+            (area.x..area.x + area.width)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .filter(|row| !row.is_empty())
+        .collect()
+}
+
+#[test]
+fn comment_navigator_names_authors_when_replies_are_listed() {
+    let mut app = app_with_thread_replies(false);
+    app.list_comment_replies = true;
+
+    let rows = rendered_navigator_rows(&mut app);
+
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    assert!(rows[0].ends_with("\u{25cf} @alice b.rs:2"), "{rows:?}");
+    assert!(rows[1].ends_with("\u{21b3} \u{25cf} @bob"), "{rows:?}");
+}
+
+#[test]
+fn comment_navigator_shows_only_locations_by_default() {
+    let mut app = app_with_thread_replies(false);
+
+    let rows = rendered_navigator_rows(&mut app);
+
+    assert!(rows[0].ends_with("\u{25cf} b.rs:2"), "{rows:?}");
+    assert!(!rows[0].contains("@alice"), "{rows:?}");
+}
+
 #[test]
 fn comment_navigator_includes_remote_review_summary() {
     use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary};
