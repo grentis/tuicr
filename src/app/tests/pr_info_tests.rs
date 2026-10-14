@@ -33,7 +33,7 @@ fn sample_pr_info() -> PullRequestInfo {
         review_decision: Some("REVIEW_REQUIRED".to_string()),
         mergeable: Some("MERGEABLE".to_string()),
         merge_state: Some("BLOCKED".to_string()),
-        requested_reviewers: vec!["bob".to_string()],
+        requested_reviewers: vec!["bob".to_string(), "security".to_string()],
         requested_users: vec!["bob".to_string()],
         latest_reviews: vec![PullRequestReviewStatus {
             author: Some("carol".to_string()),
@@ -55,7 +55,7 @@ fn sample_pr_info() -> PullRequestInfo {
     }
 }
 
-fn build_pr_app() -> App {
+pub(super) fn build_pr_app() -> App {
     let pr = PullRequestDiffSource {
         key: PrSessionKey::new(
             ForgeRepository::github("github.com", "owner", "repo"),

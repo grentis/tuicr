@@ -335,3 +335,25 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::mention_token_at;
+
+    #[test]
+    fn should_find_the_token_the_cursor_is_in() {
+        assert_eq!(mention_token_at("@", 1), Some((0, "")));
+        assert_eq!(mention_token_at("hi @oct", 7), Some((3, "oct")));
+        assert_eq!(mention_token_at("(@a-b", 5), Some((1, "a-b")));
+        assert_eq!(mention_token_at("x\n@ab cd", 5), Some((2, "ab")));
+    }
+
+    #[test]
+    fn should_ignore_text_that_is_not_a_mention() {
+        assert_eq!(mention_token_at("mail me@x", 9), None);
+        assert_eq!(mention_token_at("@ab cd", 6), None);
+        assert_eq!(mention_token_at("no at", 5), None);
+        assert_eq!(mention_token_at("@@a", 3), None);
+        assert_eq!(mention_token_at(&format!("@{}", "a".repeat(40)), 41), None);
+    }
+}

@@ -442,6 +442,7 @@ mod tests {
 
         let info = parse_pull_request_info(&json, &repo()).unwrap();
         assert_eq!(info.requested_reviewers, vec!["bob", "security"]);
+        assert_eq!(info.requested_users, vec!["bob"]);
         assert_eq!(info.latest_reviews.len(), 1);
         assert_eq!(info.checks.len(), 1);
     }
