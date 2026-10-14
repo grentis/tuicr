@@ -2048,6 +2048,16 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_jump_to_next_unreviewed() {
+        let outcome = parse_config("jump_to_next_unreviewed = true\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.jump_to_next_unreviewed),
+            Some(true)
+        );
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
     fn should_parse_list_reviewed_file_comments() {
         let outcome = parse_config("list_reviewed_file_comments = true\n");
         assert_eq!(
