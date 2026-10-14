@@ -1787,3 +1787,92 @@ fn should_defer_start_line_while_there_are_no_annotations() {
     assert!(!app.apply_pending_start_line());
     assert_eq!(app.pending_start_line, Some(5));
 }
+
+/// `a.rs`, 50 lines long, changed at 10-14 and 30-34, cursor on line 12.
+fn app_for_file_expansion() -> App {
+    let files = vec![make_file_with_hunks(
+        "a.rs",
+        vec![make_hunk(10, 5), make_hunk(30, 5)],
+    )];
+    let mut app = build_app_with_files(files, 50);
+    app.go_to_source_line(12, LineSide::New);
+    assert_eq!(app.get_line_at_cursor(), Some((12, LineSide::New)));
+    app
+}
+
+fn hidden_gap_rows(app: &App) -> usize {
+    app.line_annotations
+        .iter()
+        .filter(|line| {
+            matches!(
+                line,
+                AnnotatedLine::Expander { .. } | AnnotatedLine::HiddenLines { .. }
+            )
+        })
+        .count()
+}
+
+fn expanded_rows(app: &App) -> usize {
+    app.line_annotations
+        .iter()
+        .filter(|line| matches!(line, AnnotatedLine::ExpandedContext { .. }))
+        .count()
+}
+
+#[test]
+fn expand_shows_the_whole_file() {
+    let mut app = app_for_file_expansion();
+
+    app.toggle_file_expansion();
+
+    // 1-9, 15-29 and 35-50 are shown around the ten changed lines.
+    assert_eq!(expanded_rows(&app), 9 + 15 + 16);
+    assert_eq!(hidden_gap_rows(&app), 0);
+    assert_eq!(app.get_line_at_cursor(), Some((12, LineSide::New)));
+}
+
+#[test]
+fn expand_centres_the_cursor_line() {
+    let mut app = app_for_file_expansion();
+    app.diff_state.viewport_height = 10;
+
+    app.toggle_file_expansion();
+
+    let cursor = app.diff_state.cursor_line;
+    let top = app.diff_state.scroll_offset;
+    assert!(
+        cursor >= top + 3 && cursor <= top + 6,
+        "cursor {cursor} not near the middle of rows {top}..{}",
+        top + 10
+    );
+}
+
+#[test]
+fn expand_again_collapses_the_file() {
+    let mut app = app_for_file_expansion();
+    app.toggle_file_expansion();
+
+    app.toggle_file_expansion();
+
+    assert_eq!(expanded_rows(&app), 0);
+    assert!(hidden_gap_rows(&app) > 0);
+    assert_eq!(app.get_line_at_cursor(), Some((12, LineSide::New)));
+}
+
+#[test]
+fn expand_opens_everything_when_part_of_the_file_is_open() {
+    let mut app = app_for_file_expansion();
+    app.expand_gap(
+        GapId {
+            file_idx: 0,
+            hunk_idx: 1,
+        },
+        ExpandDirection::Up,
+        Some(5),
+    )
+    .unwrap();
+
+    app.toggle_file_expansion();
+
+    assert_eq!(expanded_rows(&app), 9 + 15 + 16);
+}

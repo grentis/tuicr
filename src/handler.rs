@@ -1955,6 +1955,14 @@ mod command_tests {
     }
 
     #[test]
+    fn parses_expand_command() {
+        assert_eq!(
+            command_spec_for("expand").map(|spec| spec.kind),
+            Some(CommandKind::Expand)
+        );
+    }
+
+    #[test]
     fn parses_open_command() {
         assert_eq!(
             command_spec_for("open").map(|spec| spec.kind),
