@@ -1458,6 +1458,171 @@ fn comment_navigator_items_follow_rendered_comment_order() {
     assert_eq!(items[3].author.as_deref(), Some("alice"));
 }
 
+/// `a.rs` with a file comment and `b.rs` marked reviewed, holding a local
+/// line comment and a forge thread on line 2.
+fn app_with_reviewed_file_comments() -> App {
+    use crate::forge::remote_comments::{
+        RemoteCommentSide, RemoteReviewComment, RemoteReviewThread,
+    };
+
+    let files = vec![
+        make_file_with_hunks("a.rs", vec![make_hunk(1, 1)]),
+        make_file_with_hunks("b.rs", vec![make_hunk(1, 2)]),
+    ];
+    let mut app = build_app_with_files(files, 10);
+    app.sync_viewport_width(80);
+    app.session
+        .files
+        .get_mut(&PathBuf::from("a.rs"))
+        .unwrap()
+        .file_comments
+        .push(Comment::new(
+            "file-level".to_string(),
+            CommentType::from_id("note"),
+            None,
+        ));
+    let b = app.session.files.get_mut(&PathBuf::from("b.rs")).unwrap();
+    b.line_comments.entry(2).or_default().push(Comment::new(
+        "line-level".to_string(),
+        CommentType::from_id("issue"),
+        Some(LineSide::New),
+    ));
+    b.reviewed = true;
+    app.forge_review_threads = vec![RemoteReviewThread {
+        id: "T1".into(),
+        path: "b.rs".into(),
+        line: Some(2),
+        side: RemoteCommentSide::Right,
+        is_resolved: false,
+        is_outdated: false,
+        comments: vec![RemoteReviewComment {
+            id: "C1".into(),
+            author: Some("alice".into()),
+            body: "remote-thread".into(),
+            created_at: None,
+            in_reply_to: None,
+            url: "https://example.com/c1".into(),
+        }],
+    }];
+    app.rebuild_annotations();
+    app
+}
+
+#[test]
+fn comment_navigator_leaves_out_collapsed_reviewed_files_by_default() {
+    let app = app_with_reviewed_file_comments();
+
+    let items = app.build_comment_navigator_items();
+
+    assert_eq!(items.len(), 1);
+    assert!(matches!(
+        items[0].key,
+        CommentNavigatorKey::File { file_idx: 0, .. }
+    ));
+}
+
+#[test]
+fn comment_navigator_lists_collapsed_reviewed_files_when_configured() {
+    let mut app = app_with_reviewed_file_comments();
+    app.list_reviewed_file_comments = true;
+
+    let items = app.build_comment_navigator_items();
+
+    // Same order an expanded file draws: the local comment, then the thread.
+    assert_eq!(items.len(), 3);
+    assert!(matches!(
+        items[1].key,
+        CommentNavigatorKey::Line {
+            file_idx: 1,
+            line: 2,
+            side: LineSide::New,
+            comment_idx: 0
+        }
+    ));
+    assert!(matches!(
+        items[2].key,
+        CommentNavigatorKey::Remote { thread_idx: 0 }
+    ));
+    assert_eq!(app.comment_navigator_item_collapsed_file(&items[0]), None);
+    assert_eq!(
+        app.comment_navigator_item_collapsed_file(&items[1]),
+        Some(1)
+    );
+}
+
+#[test]
+fn comment_navigator_lists_a_reviewed_files_threads_first_with_extended_comments() {
+    let mut app = app_with_reviewed_file_comments();
+    app.list_reviewed_file_comments = true;
+    app.forge_config.extended_comments = true;
+
+    let items = app.build_comment_navigator_items();
+
+    assert!(matches!(
+        items[1].key,
+        CommentNavigatorKey::Remote { thread_idx: 0 }
+    ));
+    assert!(matches!(items[2].key, CommentNavigatorKey::Line { .. }));
+}
+
+#[test]
+fn comment_navigator_opens_a_collapsed_reviewed_file_without_unmarking_it() {
+    let mut app = app_with_reviewed_file_comments();
+    app.list_reviewed_file_comments = true;
+    app.comment_navigator_state.select(1);
+
+    assert!(app.jump_to_selected_comment());
+
+    assert!(app.session.is_file_reviewed(&PathBuf::from("b.rs")));
+    assert!(!app.should_collapse_file(1));
+    assert!(matches!(
+        app.line_annotations.get(app.diff_state.cursor_line),
+        Some(AnnotatedLine::LineComment {
+            file_idx: 1,
+            line: 2,
+            ..
+        })
+    ));
+    assert_eq!(app.diff_state.current_file_idx, 1);
+}
+
+#[test]
+fn comment_navigator_recloses_a_reviewed_file_when_another_comment_is_picked() {
+    let mut app = app_with_reviewed_file_comments();
+    app.list_reviewed_file_comments = true;
+    app.comment_navigator_state.select(1);
+    app.jump_to_selected_comment();
+    assert!(!app.should_collapse_file(1));
+
+    // a.rs is not reviewed: picking its comment closes b.rs again.
+    app.comment_navigator_state.select(0);
+    assert!(app.jump_to_selected_comment());
+
+    assert!(app.should_collapse_file(1));
+    assert!(app.session.is_file_reviewed(&PathBuf::from("b.rs")));
+    assert!(matches!(
+        app.line_annotations.get(app.diff_state.cursor_line),
+        Some(AnnotatedLine::FileComment { file_idx: 0, .. })
+    ));
+}
+
+#[test]
+fn comment_navigator_keeps_a_reviewed_file_open_between_its_own_comments() {
+    let mut app = app_with_reviewed_file_comments();
+    app.list_reviewed_file_comments = true;
+    app.comment_navigator_state.select(1);
+    app.jump_to_selected_comment();
+
+    app.comment_navigator_state.select(2);
+    assert!(app.jump_to_selected_comment());
+
+    assert!(!app.should_collapse_file(1));
+    assert!(matches!(
+        app.line_annotations.get(app.diff_state.cursor_line),
+        Some(AnnotatedLine::RemoteThreadLine { thread_idx: 0, .. })
+    ));
+}
+
 #[test]
 fn comment_navigator_includes_remote_review_summary() {
     use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary};
