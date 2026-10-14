@@ -103,3 +103,52 @@ pub fn parse(json: &str) -> Result<Vec<MentionCandidate>> {
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_parse_users_in_order_and_drop_blank_names() {
+        let json = r#"{"data":{"repository":{"mentionableUsers":{"nodes":[
+            {"login":"octocat","name":"The Octocat"},
+            {"login":"hubot","name":""},
+            {"login":"monalisa","name":null},
+            null
+        ]}}}}"#;
+
+        let users = parse(json).unwrap();
+
+        assert_eq!(
+            users,
+            vec![
+                MentionCandidate {
+                    login: "octocat".into(),
+                    name: Some("The Octocat".into()),
+                },
+                MentionCandidate {
+                    login: "hubot".into(),
+                    name: None,
+                },
+                MentionCandidate {
+                    login: "monalisa".into(),
+                    name: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn should_report_graphql_errors() {
+        let json = r#"{"data":{"repository":null},"errors":[{"message":"Could not resolve to a Repository"}]}"#;
+
+        let error = parse(json).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Could not resolve to a Repository"),
+            "{error}"
+        );
+    }
+}

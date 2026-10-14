@@ -1294,7 +1294,9 @@ index 1111111..2222222 100644
                         .find(|a| a.starts_with("query="))
                         .map(String::as_str)
                         .unwrap_or("");
-                    if query.contains("viewerViewedState") {
+                    if query.contains("mentionableUsers(") {
+                        Ok(MENTIONABLE_USERS_JSON.to_string())
+                    } else if query.contains("viewerViewedState") {
                         Ok(VIEWED_FILES_JSON.to_string())
                     } else if query.contains("FileAsViewed(") {
                         Ok(VIEWED_MUTATION_JSON.to_string())
@@ -2226,6 +2228,33 @@ Match host github-work
             .expect("expected review metadata graphql call");
         assert!(metadata_call.iter().any(|a| a == "owner=agavra"));
         assert!(metadata_call.iter().any(|a| a == "number=125"));
+    }
+
+    const MENTIONABLE_USERS_JSON: &str = r#"{"data":{"repository":{"mentionableUsers":{"nodes":[{"login":"octocat","name":"The Octocat"}]}}}}"#;
+
+    #[test]
+    fn should_search_mentionable_users_with_the_typed_text_as_a_string() {
+        // given
+        let runner = FakeGhRunner::default();
+        let backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+        // when
+        let users = backend.search_mentionable_users(&details, "@123").unwrap();
+        // then
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].login, "octocat");
+        let calls = backend.runner.calls.lock().unwrap();
+        let call = calls
+            .iter()
+            .find(|args| args.iter().any(|a| a.contains("mentionableUsers(")))
+            .expect("expected mentionable users graphql call");
+        assert!(call.windows(2).any(|w| w[0] == "-f" && w[1] == "q=@123"));
+        assert!(
+            call.windows(2)
+                .any(|w| w[0] == "-f" && w[1] == "owner=agavra")
+        );
     }
 
     /// Returns the `gh api graphql` calls the backend placed, oldest first.
