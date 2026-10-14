@@ -416,11 +416,67 @@ impl App {
             }
 
             if adjust_cursor {
+                if now_reviewed && self.jump_to_next_unreviewed {
+                    // Moving away hides a slip of `r`, so say what was marked
+                    // and keep the way back.
+                    self.last_marked_reviewed = Some(path.clone());
+                    match self.next_unreviewed_file_after(file_idx) {
+                        Some(next) => {
+                            self.jump_to_file(next);
+                            self.set_message(format!("{} reviewed", file_label(&path)));
+                            return;
+                        }
+                        None => self.set_message("All files reviewed"),
+                    }
+                } else if self.jump_to_next_unreviewed {
+                    // Replace the "reviewed" message of the `r` being taken back.
+                    self.set_message(format!("{} unmarked", file_label(&path)));
+                }
                 let header_line = self.calculate_file_scroll_offset(file_idx);
                 self.diff_state.cursor_line = header_line;
                 self.ensure_cursor_visible();
             }
         }
+    }
+
+    /// `Ctrl-o`: go back to the file the last moving `r` marked, to look at it
+    /// again or unmark it with `r`.
+    pub fn jump_to_last_marked_reviewed(&mut self) {
+        let Some(path) = self.last_marked_reviewed.clone() else {
+            self.set_message("No file marked yet");
+            return;
+        };
+        let Some(file_idx) = self
+            .diff_files
+            .iter()
+            .position(|file| file.display_path() == &path)
+            .filter(|&idx| self.file_idx_passes_filter(idx))
+        else {
+            self.set_message(format!("{} is not shown", file_label(&path)));
+            return;
+        };
+        self.jump_to_file(file_idx);
+    }
+
+    /// The first file after `file_idx` still to review, wrapping round to the
+    /// start; `None` once every shown file is reviewed.
+    fn next_unreviewed_file_after(&self, file_idx: usize) -> Option<usize> {
+        let unreviewed: Vec<usize> = self
+            .filtered_file_indices()
+            .into_iter()
+            .filter(|&idx| {
+                idx != file_idx
+                    && self
+                        .diff_files
+                        .get(idx)
+                        .is_some_and(|file| !self.session.is_file_reviewed(file.display_path()))
+            })
+            .collect();
+        unreviewed
+            .iter()
+            .find(|&&idx| idx > file_idx)
+            .or_else(|| unreviewed.first())
+            .copied()
     }
 
     /// Land somewhere sensible after marking `file_idx` reviewed hid it: the
@@ -643,4 +699,12 @@ impl App {
     pub fn is_cursor_in_overview(&self) -> bool {
         self.diff_state.cursor_line < self.review_comments_render_height()
     }
+}
+
+/// A file's name for status messages, falling back to its whole path.
+fn file_label(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }

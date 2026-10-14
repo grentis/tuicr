@@ -55,6 +55,7 @@ username = "user"
 click_toggles_folders = true
 list_reviewed_file_comments = false
 list_comment_replies = false
+jump_to_next_unreviewed = false
 diff_watch_interval_ms = 0
 
 backend = "libgit2"
@@ -127,6 +128,7 @@ session_header = true
 | `click_toggles_folders`    | `true`       | Expand or collapse a folder in the file tree when it is clicked. `false` makes the click only select the folder, leaving `Enter` to toggle it. |
 | `list_reviewed_file_comments` | `false`      | List the comments and threads of files marked reviewed in the comment navigator too. Reviewed files collapse to their header in the diff, and by default their comments leave the list with them. With `true` they stay listed, dimmed, and `Enter` opens the file at the comment without unmarking it. |
 | `list_comment_replies`     | `false`      | List each reply of a forge thread in the comment navigator, indented under the thread as `↳ @author`, and set local replies to a thread apart the same way. Every comment and thread, yours included, is listed with its author ahead of the location (`@alice src/lib.rs:12`). `Enter` on a reply moves to it inside the thread. `false` lists a thread as one entry. |
+| `jump_to_next_unreviewed`  | `false`      | After `r` marks a file reviewed in the diff, move the cursor to the next file not yet reviewed, as `}` would, wrapping round to the first. The status bar names the file marked, and `Ctrl-o` goes back to it. When it was the last one, the cursor stays and the status bar says so. Unmarking never moves. `false` keeps the cursor on the file just marked. |
 | `backend`                  | `libgit2`    | Git backend: `libgit2` or `cli`. Sparse-checkout repos auto-route to `cli`.                                                                                |
 | `comment_types`            | (none)       | Comment categories. Untyped by default. See [Comment types](#comment-types).                                                                               |
 | `export_legend`            | `true`       | Include the `Comment types:` legend in the exported review. Superseded by `legend` under [Export](#export).                                                |

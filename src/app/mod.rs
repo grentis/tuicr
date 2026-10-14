@@ -1560,6 +1560,11 @@ pub struct App {
     pub list_reviewed_file_comments: bool,
     /// Config `list_comment_replies`: replies listed under their thread.
     pub list_comment_replies: bool,
+    /// Config `jump_to_next_unreviewed`: `r` in the diff moves on to the next
+    /// file not yet reviewed after marking one.
+    pub jump_to_next_unreviewed: bool,
+    /// The file the last moving `r` marked, for `Ctrl-o` to go back to.
+    pub last_marked_reviewed: Option<PathBuf>,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;
