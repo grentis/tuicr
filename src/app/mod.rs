@@ -1517,6 +1517,8 @@ pub struct App {
     pub show_commit_selector: bool,
     /// Display order for the inline commit selector (presentation only).
     pub commit_order: CommitOrder,
+    /// Config `click_toggles_folders`: clicking a folder folds it.
+    pub click_toggles_folders: bool,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;

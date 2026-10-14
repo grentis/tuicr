@@ -359,7 +359,11 @@ fn handle_left_click(app: &mut App, pos: Position) {
         app.file_list_state.select(idx);
         if let Some(item) = app.build_visible_items().get(idx).cloned() {
             match item {
-                FileTreeItem::Directory { path, .. } => app.toggle_directory(&path),
+                FileTreeItem::Directory { path, .. } => {
+                    if app.click_toggles_folders {
+                        app.toggle_directory(&path);
+                    }
+                }
                 FileTreeItem::File { file_idx, .. } => {
                     app.jump_to_file(file_idx);
                     app.focused_panel = FocusedPanel::Diff;

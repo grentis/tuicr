@@ -630,6 +630,7 @@ impl App {
             pr_range_reload_rx: None,
             show_commit_selector: false,
             commit_order: CommitOrder::default(),
+            click_toggles_folders: true,
             commit_selection_start: CommitSelectionStart::default(),
             initial_comments_visibility: None,
             commit_diff_cache: HashMap::new(),

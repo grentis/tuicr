@@ -313,6 +313,11 @@ fn main() -> anyhow::Result<()> {
     // also fed `App::new` for the initial `-r`/PR range; keep it on the app so
     // re-selections during the session (target selector, PR reload) honor it.
     app.commit_order = commit_order;
+    app.click_toggles_folders = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.click_toggles_folders)
+        .unwrap_or(true);
     app.commit_selection_start = commit_selection;
     app.pending_start_line = cli_args.start_line;
 
