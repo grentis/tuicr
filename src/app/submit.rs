@@ -23,8 +23,8 @@ impl App {
         skip_confirm: bool,
     ) {
         use crate::forge::submit::{
-            CommentAnchor, InlineComment, ResolverAction, SubmitContext, UnmappableItem,
-            map_comment,
+            CommentAnchor, InlineComment, ResolverAction, SubmitContext, ThreadReply,
+            UnmappableItem, map_comment,
         };
 
         let DiffSource::PullRequest(pr) = &self.diff_source else {
@@ -66,6 +66,7 @@ impl App {
 
         let mut mappable: Vec<InlineComment> = Vec::new();
         let mut unmappable: Vec<UnmappableItem> = Vec::new();
+        let mut replies: Vec<ThreadReply> = Vec::new();
         let mut total_local_drafts = 0_usize;
 
         // Walk file-level and line comments in display order. Review-level
@@ -80,6 +81,11 @@ impl App {
                     continue;
                 }
                 total_local_drafts += 1;
+                // A reply answers its thread; it is not placed in the diff.
+                if let Some(reply) = ThreadReply::from_comment(comment, submit_ctx) {
+                    replies.push(reply);
+                    continue;
+                }
                 bucket_mapping(
                     map_comment(comment, CommentAnchor::FileLevel, file, submit_ctx),
                     &mut mappable,
@@ -94,6 +100,10 @@ impl App {
                         continue;
                     }
                     total_local_drafts += 1;
+                    if let Some(reply) = ThreadReply::from_comment(comment, submit_ctx) {
+                        replies.push(reply);
+                        continue;
+                    }
                     let anchor = if comment.line_range.is_some() {
                         CommentAnchor::Range
                     } else {
@@ -131,6 +141,7 @@ impl App {
             resolver_cursor: 0,
             commit_id,
             skip_confirm,
+            replies,
         });
 
         if has_unmappable {
@@ -329,6 +340,7 @@ impl App {
         let in_flight = SubmitInFlightState {
             event: state.event,
             mappable: state.mappable.clone(),
+            replies: state.replies.clone(),
             summary_comment_ids,
             review_comment_ids,
             moved_to_summary_count: summary_items.len(),
@@ -353,6 +365,7 @@ impl App {
         let head_sha = in_flight.head_sha_snapshot.clone();
         let event = in_flight.event;
         let mappable = in_flight.mappable.clone();
+        let replies = in_flight.replies.clone();
         let commit_id = state.commit_id.clone();
         let show_pr_checks = self.show_pr_checks;
         let show_pr_comments = self.show_pr_comments;
@@ -373,7 +386,7 @@ impl App {
             );
             let result = match backend.get_pull_request(target) {
                 Ok(details) => backend
-                    .create_review(
+                    .create_review_with_replies(
                         &details,
                         CreateReviewRequest {
                             event,
@@ -381,6 +394,7 @@ impl App {
                             body: &body,
                             comments: &mappable,
                         },
+                        &replies,
                     )
                     .map_err(|e| e.to_string()),
                 Err(e) => Err(e.to_string()),
@@ -500,6 +514,11 @@ impl App {
                 response.id, inline_count, summary_count,
             ),
         };
+        let message = match in_flight.replies.len() {
+            0 => message,
+            1 => format!("{message} \u{00b7} 1 reply"),
+            n => format!("{message} \u{00b7} {n} replies"),
+        };
         if in_flight.event != SubmitEvent::Draft {
             self.mark_pr_commits_reviewed_through(&in_flight.head_sha_snapshot);
         }
@@ -532,6 +551,7 @@ impl App {
             .mappable
             .iter()
             .map(|c| c.comment_id.as_str())
+            .chain(in_flight.replies.iter().map(|r| r.comment_id.as_str()))
             .chain(in_flight.summary_comment_ids.iter().map(String::as_str))
             .chain(in_flight.review_comment_ids.iter().map(String::as_str))
             .collect();

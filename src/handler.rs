@@ -1857,7 +1857,9 @@ fn handle_shared_normal_action(app: &mut App, action: Action) {
         Action::EnterSearchMode => app.enter_search_mode(),
         Action::AddLineComment => {
             let line = app.get_line_at_cursor();
-            if line.is_some() {
+            if app.enter_thread_reply_mode() {
+                // `c` on a remote thread answers it.
+            } else if line.is_some() {
                 app.enter_comment_mode(false, line);
             } else {
                 app.set_message("Move cursor to a diff line to add a line comment");
