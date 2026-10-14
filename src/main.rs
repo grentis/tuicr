@@ -693,6 +693,11 @@ fn main() -> anyhow::Result<()> {
                                 app.open_pr_in_browser();
                                 continue;
                             }
+                            // `<leader>r` hides or shows reviewed files, like `:reviewed`.
+                            crossterm::event::KeyCode::Char('r') => {
+                                app.toggle_show_reviewed();
+                                continue;
+                            }
                             _ => {}
                         }
                         // Otherwise fall through to normal handling
