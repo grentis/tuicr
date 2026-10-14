@@ -154,6 +154,7 @@ considers files that pass the active filters.
 | `<leader>n` | Toggle relative line numbers (also `:set relativenumber!`) |
 | `<leader>o` | Open the PR in the default browser (PR mode, also `:open`) |
 | `<leader>r` | Hide or show files marked reviewed (also `:reviewed`) |
+| `<leader>x` | Show the whole current file, or only its changes again (also `:expand`) |
 | `Enter` | Select file (when file list is focused) |
 
 ## Comment navigator
@@ -277,6 +278,7 @@ In command mode,
 | `:open` | Open the PR in the default browser (PR mode) |
 | `:summary` | Show all pending local-draft comments; `j`/`k` select and `Enter` jumps |
 | `:diff` | Toggle diff view (unified / side-by-side) |
+| `:expand` | Show the whole current file by opening every hidden gap around its changes; run it again to show only the changes. A partly opened file is opened fully first. Also `<leader>x` |
 | `:theme` | Open the runtime theme picker (live preview; `/` filters, `Enter` applies and saves, `Esc` reverts) |
 | `:theme <name>` | Apply and save `<name>` directly, without opening the picker |
 | `:focus` (`:f`) | Toggle single-file view |
