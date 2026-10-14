@@ -229,6 +229,9 @@ pub struct AppConfig {
     /// used as the "viewer" identity for per-author coloring in the comment
     /// pane. Defaults to `"user"` when unset.
     pub username: Option<String>,
+    /// Whether clicking a folder in the file tree folds it. Defaults to true;
+    /// false only selects it, leaving Enter to fold.
+    pub click_toggles_folders: Option<bool>,
     /// `[forge]` section settings. Always present; `None` means "no override"
     /// and downstream code should treat it as `ForgeConfig::default()`.
     pub forge: Option<ForgeConfig>,
@@ -292,6 +295,7 @@ const KNOWN_KEYS: &[&str] = &[
     "no_update_check",
     "single_file_view",
     "username",
+    "click_toggles_folders",
     "forge",
     "export",
 ];
@@ -642,6 +646,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         no_update_check: read_bool(table, "no_update_check", &mut warnings),
         single_file_view: read_bool(table, "single_file_view", &mut warnings),
         username: read_string(table, "username", &mut warnings),
+        click_toggles_folders: read_bool(table, "click_toggles_folders", &mut warnings),
         forge: table
             .get("forge")
             .and_then(|v| parse_forge(v, &mut warnings)),
