@@ -116,11 +116,11 @@ when tuicr restarts, but they survive a `:e` reload.
 ### Hiding reviewed files
 
 `:set noreviewed` / `:set reviewed` / `:set reviewed!` (or the bare `:reviewed`)
-hide or show files already marked reviewed with `r`. There is deliberately no
-single-key binding: `H` is a vim motion, and this is a command-only feature. Like
-`i` / `e`, hidden files leave the tree, the diff pane, `{`/`}` and `[`/`]`
-navigation, `/` search, and the `+/-` counts in the header — so the header reports
-the diff still left to review.
+hide or show files already marked reviewed with `r`; `<leader>r` toggles them
+like `:reviewed`. There is deliberately no single-key binding: `H` is a vim
+motion. Like `i` / `e`, hidden files leave the tree, the diff pane, `{`/`}` and
+`[`/`]` navigation, `/` search, and the `+/-` counts in the header — so the
+header reports the diff still left to review.
 
 Two things stay deliberately unaffected. The tree title keeps counting reviewed
 files in its `reviewed/total` fraction, since scoping it to the visible rows would
@@ -153,6 +153,7 @@ considers files that pass the active filters.
 | `<leader>s` | Toggle commit selector visibility (also `:set commits!`) |
 | `<leader>n` | Toggle relative line numbers (also `:set relativenumber!`) |
 | `<leader>o` | Open the PR in the default browser (PR mode, also `:open`) |
+| `<leader>r` | Hide or show files marked reviewed (also `:reviewed`) |
 | `Enter` | Select file (when file list is focused) |
 
 ## Comment navigator
