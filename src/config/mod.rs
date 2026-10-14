@@ -250,6 +250,9 @@ pub struct AppConfig {
     /// List the comments of files marked reviewed (collapsed in the diff) in
     /// the comment navigator too. Off by default.
     pub list_reviewed_file_comments: Option<bool>,
+    /// List forge thread replies, and local replies, under their thread in the
+    /// comment navigator. Off by default.
+    pub list_comment_replies: Option<bool>,
     /// `[forge]` section settings. Always present; `None` means "no override"
     /// and downstream code should treat it as `ForgeConfig::default()`.
     pub forge: Option<ForgeConfig>,
@@ -316,6 +319,7 @@ const KNOWN_KEYS: &[&str] = &[
     "username",
     "click_toggles_folders",
     "list_reviewed_file_comments",
+    "list_comment_replies",
     "forge",
     "export",
 ];
@@ -683,6 +687,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         username: read_string(table, "username", &mut warnings),
         click_toggles_folders: read_bool(table, "click_toggles_folders", &mut warnings),
         list_reviewed_file_comments: read_bool(table, "list_reviewed_file_comments", &mut warnings),
+        list_comment_replies: read_bool(table, "list_comment_replies", &mut warnings),
         forge: table
             .get("forge")
             .and_then(|v| parse_forge(v, &mut warnings)),

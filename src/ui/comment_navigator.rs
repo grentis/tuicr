@@ -96,6 +96,15 @@ fn render_comment_row(app: &App, item: &CommentNavigatorItem) -> Line<'static> {
     };
 
     let mut spans = vec![Span::styled(marker, marker_style), Span::raw(" ")];
+    // Replies sit under their thread, named by who wrote them.
+    let location = if item.reply {
+        spans.push(Span::styled("  \u{21b3} ".to_string(), dim_style));
+        item.author
+            .as_deref()
+            .map_or_else(|| "reply".to_string(), |author| format!("@{author}"))
+    } else {
+        location
+    };
     if let Some(color) = author_accent {
         spans.push(Span::styled(
             "● ".to_string(),

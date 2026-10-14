@@ -638,6 +638,7 @@ impl App {
             commit_order: CommitOrder::default(),
             click_toggles_folders: true,
             list_reviewed_file_comments: false,
+            list_comment_replies: false,
             commit_selection_start: CommitSelectionStart::default(),
             initial_comments_visibility: None,
             commit_diff_cache: HashMap::new(),
