@@ -272,6 +272,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                format!("  {leader}r        "),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Hide/show files marked reviewed (also `:reviewed`)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  h/l       ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
@@ -505,9 +512,9 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         Line::from(Span::raw(
             "  Patterns are case-insensitive and match the whole relative path.",
         )),
-        Line::from(Span::raw(
-            "  :set noreviewed hides files already marked reviewed.",
-        )),
+        Line::from(Span::raw(format!(
+            "  :set noreviewed hides files already marked reviewed ({leader}r toggles)."
+        ))),
         Line::from(""),
         Line::from(Span::styled(
             "Comment Navigator",
@@ -916,7 +923,9 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 "  :set reviewed",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            Span::raw("  Show files marked reviewed (noreviewed hides, reviewed! toggles)"),
+            Span::raw(format!(
+                "  Show files marked reviewed (noreviewed hides, reviewed! or {leader}r toggles)"
+            )),
         ]),
         Line::from(vec![
             Span::styled(
