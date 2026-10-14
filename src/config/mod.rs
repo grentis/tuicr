@@ -236,6 +236,9 @@ pub struct AppConfig {
     /// Whether clicking a folder in the file tree folds it. Defaults to true;
     /// false only selects it, leaving Enter to fold.
     pub click_toggles_folders: Option<bool>,
+    /// List the comments of files marked reviewed (collapsed in the diff) in
+    /// the comment navigator too. Off by default.
+    pub list_reviewed_file_comments: Option<bool>,
     /// `[forge]` section settings. Always present; `None` means "no override"
     /// and downstream code should treat it as `ForgeConfig::default()`.
     pub forge: Option<ForgeConfig>,
@@ -300,6 +303,7 @@ const KNOWN_KEYS: &[&str] = &[
     "single_file_view",
     "username",
     "click_toggles_folders",
+    "list_reviewed_file_comments",
     "forge",
     "export",
 ];
@@ -651,6 +655,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         single_file_view: read_bool(table, "single_file_view", &mut warnings),
         username: read_string(table, "username", &mut warnings),
         click_toggles_folders: read_bool(table, "click_toggles_folders", &mut warnings),
+        list_reviewed_file_comments: read_bool(table, "list_reviewed_file_comments", &mut warnings),
         forge: table
             .get("forge")
             .and_then(|v| parse_forge(v, &mut warnings)),
