@@ -1623,6 +1623,146 @@ fn comment_navigator_keeps_a_reviewed_file_open_between_its_own_comments() {
     ));
 }
 
+/// `b.rs` with a forge thread on line 2 holding two replies (the first one
+/// two lines long), and a local draft answering it. Local replies come from
+/// `[forge] extended_comments`, which also draws threads first.
+fn app_with_thread_replies(reviewed: bool) -> App {
+    use crate::forge::remote_comments::{
+        RemoteCommentSide, RemoteReviewComment, RemoteReviewThread,
+    };
+
+    let files = vec![
+        make_file_with_hunks("a.rs", vec![make_hunk(1, 1)]),
+        make_file_with_hunks("b.rs", vec![make_hunk(1, 2)]),
+    ];
+    let mut app = build_app_with_files(files, 10);
+    app.sync_viewport_width(80);
+    let remote = |id: &str, author: &str, body: &str| RemoteReviewComment {
+        id: id.into(),
+        author: Some(author.into()),
+        body: body.into(),
+        created_at: None,
+        in_reply_to: None,
+        url: format!("https://example.com/{id}"),
+    };
+    app.forge_review_threads = vec![RemoteReviewThread {
+        id: "T1".into(),
+        path: "b.rs".into(),
+        line: Some(2),
+        side: RemoteCommentSide::Right,
+        is_resolved: false,
+        is_outdated: false,
+        comments: vec![
+            remote("C1", "alice", "root"),
+            remote("C2", "bob", "first reply\nsecond line"),
+            remote("C3", "carol", "second reply"),
+        ],
+    }];
+    let b = app.session.files.get_mut(&PathBuf::from("b.rs")).unwrap();
+    let mut draft = Comment::new(
+        "my answer".to_string(),
+        CommentType::from_id("note"),
+        Some(LineSide::New),
+    );
+    draft.reply_to_thread = Some("T1".to_string());
+    b.line_comments.entry(2).or_default().push(draft);
+    b.reviewed = reviewed;
+    app.forge_config.extended_comments = true;
+    app.rebuild_annotations();
+    app
+}
+
+fn thread_start(app: &App) -> usize {
+    app.line_annotations
+        .iter()
+        .position(|line| matches!(line, AnnotatedLine::RemoteThreadLine { thread_idx: 0, .. }))
+        .expect("thread is drawn")
+}
+
+#[test]
+fn comment_navigator_lists_a_thread_once_by_default() {
+    let app = app_with_thread_replies(false);
+
+    let items = app.build_comment_navigator_items();
+
+    assert_eq!(items.len(), 2);
+    assert!(matches!(
+        items[0].key,
+        CommentNavigatorKey::Remote { thread_idx: 0 }
+    ));
+    assert!(
+        !items[1].reply,
+        "the local draft is not set apart without list_comment_replies"
+    );
+}
+
+#[test]
+fn comment_navigator_lists_replies_under_their_thread_when_configured() {
+    let mut app = app_with_thread_replies(false);
+    app.list_comment_replies = true;
+
+    let items = app.build_comment_navigator_items();
+
+    assert_eq!(items.len(), 4);
+    assert!(matches!(
+        items[0].key,
+        CommentNavigatorKey::Remote { thread_idx: 0 }
+    ));
+    assert!(!items[0].reply);
+    assert!(matches!(
+        items[1].key,
+        CommentNavigatorKey::RemoteReply {
+            thread_idx: 0,
+            comment_idx: 1
+        }
+    ));
+    assert_eq!(items[1].author.as_deref(), Some("bob"));
+    assert!(matches!(
+        items[2].key,
+        CommentNavigatorKey::RemoteReply {
+            thread_idx: 0,
+            comment_idx: 2
+        }
+    ));
+    assert_eq!(items[2].author.as_deref(), Some("carol"));
+    assert!(matches!(items[3].key, CommentNavigatorKey::Line { .. }));
+    assert!(items.iter().skip(1).all(|item| item.reply));
+    // Each reply points at its own separator row: root header + its body
+    // line, then the first reply's separator + its two body lines.
+    let start = thread_start(&app);
+    assert_eq!(items[1].target_annotation, start + 2);
+    assert_eq!(items[2].target_annotation, start + 5);
+}
+
+#[test]
+fn comment_navigator_follows_the_reply_under_the_cursor() {
+    let mut app = app_with_thread_replies(false);
+    app.list_comment_replies = true;
+    app.focused_panel = FocusedPanel::Diff;
+    // The second body line of the first reply.
+    app.diff_state.cursor_line = thread_start(&app) + 4;
+
+    let items = app.build_comment_navigator_items();
+    app.sync_comment_navigator_selection(&items);
+
+    assert_eq!(app.comment_navigator_state.selected(), 1);
+}
+
+#[test]
+fn comment_navigator_opens_a_reply_in_a_collapsed_reviewed_file() {
+    let mut app = app_with_thread_replies(true);
+    app.list_comment_replies = true;
+    app.list_reviewed_file_comments = true;
+    let items = app.build_comment_navigator_items();
+    assert_eq!(items.len(), 4);
+    app.comment_navigator_state.select(2);
+
+    assert!(app.jump_to_selected_comment());
+
+    assert!(app.session.is_file_reviewed(&PathBuf::from("b.rs")));
+    assert_eq!(app.diff_state.cursor_line, thread_start(&app) + 5);
+}
+
 #[test]
 fn comment_navigator_includes_remote_review_summary() {
     use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary};
