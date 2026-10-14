@@ -110,6 +110,17 @@ fn render_comment_row(app: &App, item: &CommentNavigatorItem) -> Line<'static> {
             "● ".to_string(),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ));
+        // With `list_comment_replies`, someone else's comment leads with its
+        // author; a reply row already shows it.
+        if app.list_comment_replies
+            && !item.reply
+            && let Some(author) = item.author.as_deref()
+        {
+            spans.push(Span::styled(
+                format!("@{author} "),
+                Style::default().fg(color),
+            ));
+        }
     }
     spans.push(Span::styled(location, dim_style));
     Line::from(spans)
