@@ -298,6 +298,8 @@ mod tests {
         /// rather than the merge base the patch is taken from. `None` models
         /// a backend that already reports the merge base (GitLab).
         diff_base_sha: Option<String>,
+        /// When set, the diff fails with this error.
+        diff_error: Option<&'static str>,
     }
 
     impl StaticBackend {
@@ -307,11 +309,17 @@ mod tests {
                 patch: patch.to_string(),
                 calls: Mutex::new(Vec::new()),
                 diff_base_sha: None,
+                diff_error: None,
             }
         }
 
         fn with_diff_base_sha(mut self, sha: &str) -> Self {
             self.diff_base_sha = Some(sha.to_string());
+            self
+        }
+
+        fn with_diff_error(mut self, error: &'static str) -> Self {
+            self.diff_error = Some(error);
             self
         }
     }
@@ -331,6 +339,9 @@ mod tests {
         }
         fn get_pull_request_diff(&self, _pr: &PullRequestDetails) -> Result<Vec<FilePatch>> {
             self.calls.lock().unwrap().push("get_pull_request_diff");
+            if let Some(error) = self.diff_error {
+                return Err(crate::error::TuicrError::Forge(error.to_string()));
+            }
             Ok(crate::vcs::diff_parser::git_fixture_file_patches(
                 &self.patch,
             ))
@@ -859,6 +870,34 @@ rename to new_name.rs
         assert_eq!(
             backend.calls.lock().unwrap().as_slice(),
             &["get_pull_request"]
+        );
+    }
+
+    #[test]
+    fn should_open_a_pr_without_its_diff_when_only_the_diff_fails() {
+        // given a forge that serves the PR but not its diff
+        let backend = StaticBackend::new(details(), SIMPLE_PATCH)
+            .with_diff_error("PullRequest.diff too_large");
+        let target = PullRequestTarget::with_repository(repo(), 125, "125");
+        let highlighter = SyntaxHighlighter::default();
+        // when
+        let opened = open_pull_request(&backend, target, None, &highlighter).unwrap();
+        // then the PR opens, empty, saying why
+        assert!(opened.diff_files.is_empty());
+        assert!(
+            opened
+                .diff_error
+                .as_deref()
+                .is_some_and(|error| error.contains("too_large"))
+        );
+        assert_eq!(opened.key.number, 125);
+        assert_eq!(
+            opened.details.url,
+            "https://github.com/agavra/tuicr/pull/125"
+        );
+        assert_eq!(
+            opened.session.pr_session_key.as_ref().map(|k| k.number),
+            Some(125)
         );
     }
 }

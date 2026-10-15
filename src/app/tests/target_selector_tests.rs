@@ -2073,6 +2073,45 @@ fn should_keep_reviewed_state_through_finish_pr_reload_when_head_unchanged() {
 }
 
 #[test]
+fn should_stay_on_the_pr_and_say_why_when_a_reload_gets_no_diff() {
+    // given an app in PR mode
+    let mut app = build_app();
+    let summary = sample_pr(424254, "no-diff");
+    let details = test_pr_details(424254, "no-diff");
+    let backend = Box::new(FakeForgeBackend::open_pr_details(
+        details.clone(),
+        two_file_patch("new changed"),
+    ));
+    app.open_pr_with_backend(&summary, backend, None).unwrap();
+    let request = PrReloadRequest {
+        repository: details.repository.clone(),
+        pr_number: details.number,
+        head_sha: details.head_sha.clone(),
+        started_at: Instant::now(),
+        anchor: None,
+        restore_overview_cursor: None,
+    };
+
+    // when `:e` fetches the PR but not its diff
+    app.finish_pr_reload(
+        details.clone(),
+        Err("PullRequest.diff too_large".to_string()),
+        Vec::new(),
+        PullRequestReviewMetadata::default(),
+        crate::forge::traits::PullRequestInfo::from_details(details),
+        &request,
+    )
+    .unwrap();
+
+    // then the PR stays open, without a diff, and the error says so
+    assert!(matches!(app.diff_source, DiffSource::PullRequest(_)));
+    assert!(app.diff_files.is_empty());
+    let message = &app.message.as_ref().unwrap().content;
+    assert!(message.contains("PR opened without its diff"), "{message}");
+    assert!(message.contains("too_large"), "{message}");
+}
+
+#[test]
 fn should_keep_session_when_pr_head_unchanged_on_reload() {
     // given an app in PR mode
     let mut app = build_app();
