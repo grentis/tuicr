@@ -40,6 +40,7 @@ impl App {
             commits,
             review_metadata,
             pr_info,
+            diff_error,
         } = opened;
 
         // Save the current session before transitioning so local-mode work
@@ -116,6 +117,9 @@ impl App {
             self.set_warning(format!("This PR is {reason} — review is read-only"));
         } else if let Some(message) = since_last_review_message {
             self.set_message(message);
+        }
+        if let Some(error) = diff_error {
+            self.report_missing_pr_diff(&error);
         }
 
         // If the restored selection is a strict subset, fire an initial
@@ -585,20 +589,20 @@ impl App {
     pub(in crate::app) fn finish_pr_reload(
         &mut self,
         details: crate::forge::traits::PullRequestDetails,
-        patches: Vec<crate::model::FilePatch>,
+        patches: crate::forge::pr_open::PrPatches,
         commits: Vec<crate::forge::traits::PullRequestCommit>,
         review_metadata: crate::forge::traits::PullRequestReviewMetadata,
         pr_info: crate::forge::traits::PullRequestInfo,
         request: &PrReloadRequest,
     ) -> Result<()> {
-        use crate::forge::pr_open::prepare_open_pr;
+        use crate::forge::pr_open::prepare_fetched_pr;
 
         let local_checkout = self
             .forge_backend
             .as_deref()
             .and_then(|backend| backend.local_checkout_path());
         let highlighter = self.theme.syntax_highlighter();
-        let opened = prepare_open_pr(
+        let opened = prepare_fetched_pr(
             details,
             patches,
             commits,
@@ -608,6 +612,7 @@ impl App {
             highlighter,
         )?;
 
+        let diff_error = opened.diff_error.clone();
         let head_changed = opened.details.head_sha != request.head_sha;
         if head_changed {
             let details_for_threads = opened.details.clone();
@@ -658,7 +663,18 @@ impl App {
         // panic. Clamp into the current bounds.
         self.diff_state.cursor_line = self.diff_state.cursor_line.min(self.max_cursor_line());
         self.ensure_cursor_visible();
+        if let Some(error) = diff_error {
+            self.report_missing_pr_diff(&error);
+        }
         Ok(())
+    }
+
+    /// Say that the PR opened without its diff, and why. Everything else
+    /// about the PR still works; `:e` tries the diff again.
+    pub(in crate::app) fn report_missing_pr_diff(&mut self, error: &str) {
+        self.set_error(format!(
+            "PR opened without its diff \u{00b7} :e retries \u{00b7} {error}"
+        ));
     }
 
     /// Synchronous reload. Production code uses `spawn_pr_reload` for the
@@ -1050,17 +1066,17 @@ impl App {
     fn finish_pr_open(
         &mut self,
         details: crate::forge::traits::PullRequestDetails,
-        patches: Vec<crate::model::FilePatch>,
+        patches: crate::forge::pr_open::PrPatches,
         commits: Vec<crate::forge::traits::PullRequestCommit>,
         review_metadata: crate::forge::traits::PullRequestReviewMetadata,
         pr_info: crate::forge::traits::PullRequestInfo,
         request: &PrOpenRequest,
     ) -> Result<()> {
-        use crate::forge::pr_open::prepare_open_pr;
+        use crate::forge::pr_open::prepare_fetched_pr;
 
         let local_checkout = self.local_checkout_for(&request.repository);
         let highlighter = self.theme.syntax_highlighter();
-        let mut opened = prepare_open_pr(
+        let mut opened = prepare_fetched_pr(
             details.clone(),
             patches,
             commits,

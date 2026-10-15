@@ -41,12 +41,19 @@ pub struct OpenedPullRequest {
     pub review_metadata: PullRequestReviewMetadata,
     /// Extended PR metadata for the description panel.
     pub pr_info: PullRequestInfo,
+    /// Why the diff could not be loaded, when the PR opened without it
+    /// (`diff_files` is then empty). The rest of the PR is usable.
+    pub diff_error: Option<String>,
 }
+
+/// The PR's diff as fetched: its patches, or why the forge would not serve
+/// them. A failed diff does not fail the open; the PR opens without it.
+pub type PrPatches = std::result::Result<Vec<FilePatch>, String>;
 
 /// Send-safe data fetched before the main thread materializes diff hunks.
 pub type PrFetchData = (
     PullRequestDetails,
-    Vec<FilePatch>,
+    PrPatches,
     Vec<PullRequestCommit>,
     PullRequestReviewMetadata,
     PullRequestInfo,
@@ -64,7 +71,7 @@ pub fn open_pull_request(
     highlighter: &SyntaxHighlighter,
 ) -> Result<OpenedPullRequest> {
     let (details, patches, commits, review_metadata, pr_info) = fetch_pr_data(backend, target)?;
-    prepare_open_pr(
+    prepare_fetched_pr(
         details,
         patches,
         commits,
@@ -81,7 +88,9 @@ pub fn open_pull_request(
 ///
 /// The commit list is best-effort: if the forge fails on that endpoint
 /// only, we still return the diff so PR review proceeds without the
-/// inline selector. The first two calls remain required.
+/// inline selector. The PR's metadata is required; its diff is not: when
+/// only the diff fails (a PR over GitHub's 300-file limit, say), the error
+/// travels in place of the patches so the PR still opens, without a diff.
 ///
 /// Only the PR metadata and the diff-base refinement have to come first.
 /// The diff, the commit list, and the review metadata need nothing but the
@@ -110,10 +119,51 @@ pub fn fetch_pr_data(
             )
         },
     );
-    let patches = patches?;
+    let patches = patches.map_err(|e| e.to_string());
     let commits = commits.unwrap_or_default();
     let review_metadata = review_metadata.unwrap_or_default();
     Ok((details, patches, commits, review_metadata, pr_info))
+}
+
+/// Main-thread half of the PR open for fetched data: the usual preparation
+/// when the diff came, or the PR without a diff when it did not.
+pub fn prepare_fetched_pr(
+    details: PullRequestDetails,
+    patches: PrPatches,
+    commits: Vec<PullRequestCommit>,
+    review_metadata: PullRequestReviewMetadata,
+    pr_info: PullRequestInfo,
+    local_checkout: Option<&Path>,
+    highlighter: &SyntaxHighlighter,
+) -> Result<OpenedPullRequest> {
+    let patches = match patches {
+        Ok(patches) => patches,
+        Err(diff_error) => {
+            let key = PrSessionKey::from_details(&details);
+            let session = build_session(&details, &key, &[]);
+            let mut commits = commits;
+            commits.reverse();
+            return Ok(OpenedPullRequest {
+                details,
+                diff_files: Vec::new(),
+                session,
+                key,
+                commits,
+                review_metadata,
+                pr_info,
+                diff_error: Some(diff_error),
+            });
+        }
+    };
+    prepare_open_pr(
+        details,
+        patches,
+        commits,
+        review_metadata,
+        pr_info,
+        local_checkout,
+        highlighter,
+    )
 }
 
 /// CPU-only half of the PR open path: apply `.tuicrignore` to the raw
@@ -166,6 +216,7 @@ pub fn prepare_open_pr(
         commits,
         review_metadata,
         pr_info,
+        diff_error: None,
     })
 }
 
@@ -689,7 +740,9 @@ rename to new_name.rs
             pr_info.details.base_sha = base_sha;
         }
         let details = pr_info.details.clone();
-        let patches = backend.get_pull_request_diff(&details)?;
+        let patches = backend
+            .get_pull_request_diff(&details)
+            .map_err(|e| e.to_string());
         let commits = backend
             .list_pull_request_commits(&details)
             .unwrap_or_default();
@@ -715,10 +768,10 @@ rename to new_name.rs
         let concurrent_backend = SlowBackend::new(delay_ms, &[]);
         // when
         let started = std::time::Instant::now();
-        fetch_pr_data_sequential(&sequential_backend, target()).unwrap();
+        let _ = fetch_pr_data_sequential(&sequential_backend, target()).unwrap();
         let sequential = started.elapsed();
         let started = std::time::Instant::now();
-        fetch_pr_data(&concurrent_backend, target()).unwrap();
+        let _ = fetch_pr_data(&concurrent_backend, target()).unwrap();
         let concurrent = started.elapsed();
         eprintln!("4 calls x {delay_ms}ms: sequential {sequential:?}, concurrent {concurrent:?}");
         // then — the sequential path pays for all four calls; the concurrent
@@ -770,13 +823,14 @@ rename to new_name.rs
     }
 
     #[test]
-    fn should_surface_the_diff_error_and_degrade_optional_calls() {
+    fn should_carry_the_diff_error_and_degrade_optional_calls() {
         // given — the diff and the commit list both fail.
         let backend = SlowBackend::new(0, &["get_pull_request_diff", "list_pull_request_commits"]);
         // when
-        let error = fetch_pr_data(&backend, target()).unwrap_err();
-        // then — the required call's error wins; the best-effort one is dropped.
-        assert_eq!(error.to_string(), "get_pull_request_diff failed");
+        let (_, patches, commits, _, _) = fetch_pr_data(&backend, target()).unwrap();
+        // then — the PR opens with the diff's error; the best-effort one is dropped.
+        assert_eq!(patches, Err("get_pull_request_diff failed".to_string()));
+        assert!(commits.is_empty());
 
         // given — only the best-effort calls fail.
         let backend = SlowBackend::new(
@@ -789,7 +843,7 @@ rename to new_name.rs
         // when
         let (_, patches, commits, review_metadata, _) = fetch_pr_data(&backend, target()).unwrap();
         // then — the diff still opens, without the commit selector.
-        assert_eq!(patches.len(), 1);
+        assert_eq!(patches.unwrap().len(), 1);
         assert!(commits.is_empty());
         assert_eq!(review_metadata, PullRequestReviewMetadata::default());
     }

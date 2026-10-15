@@ -995,6 +995,7 @@ impl App {
         let details_for_threads = opened.details.clone();
         let commits_for_selector = opened.commits.clone();
         let review_metadata = opened.review_metadata.clone();
+        let diff_error = opened.diff_error.clone();
         let mut app = Self::build(
             vcs,
             vcs_info,
@@ -1043,6 +1044,9 @@ impl App {
             app.set_warning(format!("This PR is {reason} — review is read-only"));
         } else if let Some(message) = since_last_review_message {
             app.set_message(message);
+        }
+        if let Some(error) = diff_error {
+            app.report_missing_pr_diff(&error);
         }
         // Spawn thread-fetch on startup; the main event loop will drain
         // the receiver via `poll_pr_threads_events` once it begins.
