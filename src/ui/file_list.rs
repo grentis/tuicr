@@ -15,6 +15,11 @@ const EXPANDED_GLYPH: &str = "\u{25bc}"; // ▼
 const COLLAPSED_GLYPH: &str = "\u{25b6}"; // ▶
 const REVIEWED_BOX: &str = "\u{25a3}"; // ▣
 const UNREVIEWED_BOX: &str = "\u{25a2}"; // ▢
+// Git state of a file in a `--branch` review with `git_actions` on.
+const STAGED_MARK: &str = "\u{25cf}"; // ● all of it staged
+const UNSTAGED_MARK: &str = "\u{25cb}"; // ○ nothing of it staged
+const PARTLY_STAGED_MARK: &str = "\u{25d0}"; // ◐ staged, with more changes since
+const COMMITTED_MARK: &str = "\u{00b7}"; // · no uncommitted changes
 
 pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focused_panel == FocusedPanel::FileList;
@@ -60,7 +65,12 @@ pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("?");
-                depth * 2 + 4 + filename.width()
+                let git_mark = if app.git_file_state(file.display_path()).is_some() {
+                    2
+                } else {
+                    0
+                };
+                depth * 2 + 4 + git_mark + filename.width()
             }
         })
         .max()
@@ -153,6 +163,19 @@ pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
                                 format!("{status} "),
                                 styles::file_status_style(&app.theme, status),
                             ));
+                        }
+                        if let Some(state) = app.git_file_state(path) {
+                            let (mark, style) = match (state.staged, state.unstaged) {
+                                (true, false) => {
+                                    (STAGED_MARK, Style::default().fg(app.theme.diff_add))
+                                }
+                                (true, true) => {
+                                    (PARTLY_STAGED_MARK, styles::pending_style(&app.theme))
+                                }
+                                (false, true) => (UNSTAGED_MARK, styles::pending_style(&app.theme)),
+                                (false, false) => (COMMITTED_MARK, styles::dim_style(&app.theme)),
+                            };
+                            spans.push(Span::styled(format!("{mark} "), style));
                         }
                         spans.push(Span::raw(filename.to_string()));
                         Line::from(spans)
@@ -276,6 +299,19 @@ fn filter_footer(app: &App) -> Option<Line<'static>> {
         }
         spans.push(Span::styled(
             "reviewed hidden",
+            Style::default().fg(theme.fg_secondary),
+        ));
+    }
+    // Say so while `:uncommitted` hides files with nothing left to commit.
+    if app.only_uncommitted() {
+        if !spans.is_empty() {
+            spans.push(Span::styled(
+                " \u{00b7} ",
+                Style::default().fg(theme.fg_dim),
+            ));
+        }
+        spans.push(Span::styled(
+            "uncommitted only",
             Style::default().fg(theme.fg_secondary),
         ));
     }

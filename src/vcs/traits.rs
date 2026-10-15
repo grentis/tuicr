@@ -356,6 +356,22 @@ pub trait VcsBackend: Send {
             "Staging not supported for this VCS".into(),
         ))
     }
+
+    /// Staged and unstaged changes of one path; the cheap probe, where `list_changed_paths` walks
+    /// the whole tree.
+    fn path_change_status(&self, _path: &Path) -> Result<VcsChangeStatus> {
+        Err(crate::error::TuicrError::UnsupportedOperation(
+            "Per-path status not supported for this VCS".into(),
+        ))
+    }
+
+    /// Unstage a file: reset its index entry to HEAD's, or drop it if HEAD lacks the file. The
+    /// working tree is untouched.
+    fn unstage_file(&self, _path: &Path) -> Result<()> {
+        Err(crate::error::TuicrError::UnsupportedOperation(
+            "Unstaging not supported for this VCS".into(),
+        ))
+    }
 }
 
 #[cfg(test)]

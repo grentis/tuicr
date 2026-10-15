@@ -554,6 +554,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  s         ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(
+                "Stage/unstage file or directory (git_actions, --branch: \u{25cf} staged \u{25cb} unstaged \u{25d0} partly \u{00b7} committed)",
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  R         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
@@ -799,6 +808,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::raw("Toggle unified/side-by-side diff view"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  :uncommitted",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  Show only files with uncommitted changes (git_actions, --branch)"),
         ]),
         Line::from(vec![
             Span::styled(

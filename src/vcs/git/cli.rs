@@ -446,6 +446,60 @@ impl VcsBackend for GitCliBackend {
 
         Ok(())
     }
+
+    fn path_change_status(&self, path: &Path) -> Result<VcsChangeStatus> {
+        let output = Command::new("git")
+            .current_dir(&self.root_path)
+            .args([
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--",
+            ])
+            .arg(path)
+            .output()
+            .map_err(|e| TuicrError::VcsCommand(format!("Failed to run git: {e}")))?;
+        if !output.status.success() {
+            return Err(TuicrError::VcsCommand(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        // `XY path`: X is the index against HEAD, Y the tree against the
+        // index; `??` is untracked.
+        let mut status = VcsChangeStatus {
+            staged: false,
+            unstaged: false,
+        };
+        for record in output.stdout.split(|&b| b == 0) {
+            let [x, y, ..] = record else { continue };
+            if (*x, *y) == (b'?', b'?') {
+                status.unstaged = true;
+                continue;
+            }
+            status.staged |= *x != b' ';
+            status.unstaged |= *y != b' ';
+        }
+        Ok(status)
+    }
+
+    fn unstage_file(&self, path: &Path) -> Result<()> {
+        // `reset` works before the first commit, where `restore --staged` cannot resolve HEAD.
+        let output = Command::new("git")
+            .current_dir(&self.root_path)
+            .args(["reset", "-q", "--"])
+            .arg(path)
+            .output()
+            .map_err(|e| TuicrError::VcsCommand(format!("Failed to run git: {e}")))?;
+
+        if !output.status.success() {
+            return Err(TuicrError::VcsCommand(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 fn strings<const N: usize>(args: [&str; N]) -> Vec<String> {
