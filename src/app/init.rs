@@ -649,6 +649,8 @@ impl App {
             comment_threads: false,
             last_marked_reviewed: None,
             keep_reviewed_on_quit: false,
+            git_actions: false,
+            git_file_states: HashMap::new(),
             commit_selection_start: CommitSelectionStart::default(),
             initial_comments_visibility: None,
             commit_diff_cache: HashMap::new(),
