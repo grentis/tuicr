@@ -121,6 +121,21 @@ impl App {
             }
         }
 
+        // Replies only: the other drafts stay local, with no review to hold
+        // or summarize them.
+        if event == crate::forge::submit::SubmitEvent::Replies {
+            if !self.forge_config.extended_comments {
+                self.set_warning(":submit replies needs [forge] extended_comments");
+                return;
+            }
+            if replies.is_empty() {
+                self.set_warning("No replies to send \u{00b7} c on a thread drafts one");
+                return;
+            }
+            mappable.clear();
+            unmappable.clear();
+        }
+
         // Approve is the one event that's meaningful with no comments — a
         // bare "LGTM" approval. Every other event needs at least one local
         // draft comment or a review-level comment, otherwise there's
@@ -169,7 +184,7 @@ impl App {
 
     /// Move the action-picker cursor down by one row, wrapping at the end.
     pub fn submit_picker_cursor_down(&mut self) {
-        let total = SUBMIT_PICKER_EVENTS.len();
+        let total = self.submit_picker_events().len();
         if total > 0 {
             self.submit_picker_cursor = (self.submit_picker_cursor + 1) % total;
         }
@@ -177,7 +192,7 @@ impl App {
 
     /// Move the action-picker cursor up by one row, wrapping at the start.
     pub fn submit_picker_cursor_up(&mut self) {
-        let total = SUBMIT_PICKER_EVENTS.len();
+        let total = self.submit_picker_events().len();
         if total > 0 {
             self.submit_picker_cursor = (self.submit_picker_cursor + total - 1) % total;
         }
@@ -186,7 +201,8 @@ impl App {
     /// Confirm the action picker selection: dispatch into preflight with the
     /// chosen event and `skip_confirm = true`.
     pub fn submit_picker_confirm(&mut self) {
-        let Some(event) = SUBMIT_PICKER_EVENTS
+        let Some(event) = self
+            .submit_picker_events()
             .get(self.submit_picker_cursor)
             .map(|(_, ev)| *ev)
         else {
@@ -195,6 +211,18 @@ impl App {
         };
         self.input_mode = InputMode::Normal;
         self.start_submit_with(event, true);
+    }
+
+    /// The picker's rows: "Replies only" needs `[forge] extended_comments`.
+    pub fn submit_picker_events(
+        &self,
+    ) -> &'static [(&'static str, crate::forge::submit::SubmitEvent)] {
+        let all = SUBMIT_PICKER_EVENTS;
+        if self.forge_config.extended_comments {
+            all
+        } else {
+            &all[..all.len() - 1]
+        }
     }
 
     /// Cancel the action picker without entering preflight.
@@ -303,6 +331,10 @@ impl App {
         let Some(state) = self.submit_state.take() else {
             return Ok(());
         };
+        if state.event == crate::forge::submit::SubmitEvent::Replies {
+            self.spawn_replies_submit(&pr, state);
+            return Ok(());
+        }
 
         let summary_items: Vec<MovedToSummaryItem> = state
             .unmappable
@@ -409,6 +441,78 @@ impl App {
         Ok(())
     }
 
+    /// `:submit replies`: post each reply on its own, in the background. Stops
+    /// at the first failure; the rest stay drafts.
+    fn spawn_replies_submit(&mut self, pr: &PullRequestDiffSource, state: SubmitState) {
+        use crate::forge::traits::PullRequestTarget;
+
+        let _ = self.save_current_session_merging_external();
+        let in_flight = SubmitInFlightState {
+            event: state.event,
+            mappable: Vec::new(),
+            replies: state.replies.clone(),
+            summary_comment_ids: Vec::new(),
+            review_comment_ids: Vec::new(),
+            moved_to_summary_count: 0,
+            head_sha_snapshot: state.commit_id.clone(),
+            repository: pr.key.repository.clone(),
+            pr_number: pr.key.number,
+            started_at: Instant::now(),
+        };
+        self.pr_submit_state = Some(in_flight.clone());
+        self.input_mode = InputMode::Normal;
+
+        let local_checkout = self
+            .forge_backend
+            .as_deref()
+            .and_then(|backend| backend.local_checkout_path());
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.pr_submit_rx = Some(rx);
+        let SubmitInFlightState {
+            repository,
+            pr_number,
+            head_sha_snapshot: head_sha,
+            replies,
+            ..
+        } = in_flight;
+        let show_pr_checks = self.show_pr_checks;
+        let show_pr_comments = self.show_pr_comments;
+
+        std::thread::spawn(move || {
+            let backend = create_forge_backend(
+                &repository,
+                local_checkout,
+                show_pr_checks,
+                show_pr_comments,
+            );
+            let target = PullRequestTarget::with_repository(
+                repository.clone(),
+                pr_number,
+                pr_number.to_string(),
+            );
+            let mut sent = Vec::new();
+            let error = match backend.get_pull_request(target) {
+                Ok(details) => replies.iter().find_map(|reply| {
+                    match backend.reply_to_thread(&details, reply) {
+                        Ok(()) => {
+                            sent.push(reply.comment_id.clone());
+                            None
+                        }
+                        Err(e) => Some(e.to_string()),
+                    }
+                }),
+                Err(e) => Some(e.to_string()),
+            };
+            let _ = tx.send(PrSubmitEvent::RepliesDone {
+                repository,
+                pr_number,
+                head_sha,
+                sent,
+                error,
+            });
+        });
+    }
+
     /// Pump a pending create-review result. Applies lifecycle writes + the
     /// success message, or surfaces a sticky error.
     pub fn poll_pr_submit_events(&mut self) {
@@ -421,12 +525,20 @@ impl App {
         };
         self.pr_submit_rx = None;
         let in_flight = self.pr_submit_state.take();
-        let PrSubmitEvent::Done {
-            repository,
-            pr_number,
-            head_sha,
-            result,
-        } = event;
+        let (repository, pr_number, head_sha) = match &event {
+            PrSubmitEvent::Done {
+                repository,
+                pr_number,
+                head_sha,
+                ..
+            }
+            | PrSubmitEvent::RepliesDone {
+                repository,
+                pr_number,
+                head_sha,
+                ..
+            } => (repository.clone(), *pr_number, head_sha.clone()),
+        };
 
         // Stale-result discard: if the user reloaded the PR mid-submit, the
         // active head SHA may have moved. Drop the result rather than
@@ -442,7 +554,49 @@ impl App {
             return;
         }
 
-        self.finish_pr_submit(in_flight, result);
+        match event {
+            PrSubmitEvent::Done { result, .. } => self.finish_pr_submit(in_flight, result),
+            PrSubmitEvent::RepliesDone { sent, error, .. } => {
+                self.finish_replies_submit(&in_flight, &sent, error)
+            }
+        }
+    }
+
+    /// Apply a `:submit replies` result: posted replies are submitted, the rest
+    /// stay drafts.
+    pub fn finish_replies_submit(
+        &mut self,
+        in_flight: &SubmitInFlightState,
+        sent: &[String],
+        error: Option<String>,
+    ) {
+        if !sent.is_empty() {
+            let ids: std::collections::HashSet<&str> = sent.iter().map(String::as_str).collect();
+            self.mark_comments_sent(
+                &ids,
+                crate::model::comment::CommentLifecycleState::Submitted,
+                None,
+            );
+            let _ = self.save_current_session_merging_external();
+        }
+        let total = in_flight.replies.len();
+        let replies = |n: usize| {
+            if n == 1 {
+                "1 reply".to_string()
+            } else {
+                format!("{n} replies")
+            }
+        };
+        match error {
+            None => self.set_message(format!("Sent {}", replies(total))),
+            Some(error) => self.set_error(format!(
+                "Sent {} of {total} \u{00b7} {error} \u{00b7} :submit replies sends the rest",
+                sent.len()
+            )),
+        }
+        if !sent.is_empty() {
+            self.refetch_pr_threads();
+        }
     }
 
     /// Human-readable name of the forge backing the current PR/MR review.
@@ -558,28 +712,27 @@ impl App {
         if target_ids.is_empty() {
             return;
         }
+        self.mark_comments_sent(&target_ids, new_state, Some(review_id));
+    }
 
-        for comment in self.session.review_comments.iter_mut() {
-            if target_ids.contains(comment.id.as_str()) {
+    /// Move the comments in `ids` to `new_state`, stamping the review they
+    /// went out in, when there was one.
+    fn mark_comments_sent(
+        &mut self,
+        ids: &std::collections::HashSet<&str>,
+        new_state: crate::model::comment::CommentLifecycleState,
+        review_id: Option<String>,
+    ) {
+        let mark = |comment: &mut crate::model::comment::Comment| {
+            if ids.contains(comment.id.as_str()) {
                 comment.lifecycle_state = new_state;
-                comment.remote_review_id = Some(review_id.clone());
+                comment.remote_review_id = review_id.clone();
             }
-        }
+        };
+        self.session.review_comments.iter_mut().for_each(mark);
         for review in self.session.files.values_mut() {
-            for comment in review.file_comments.iter_mut() {
-                if target_ids.contains(comment.id.as_str()) {
-                    comment.lifecycle_state = new_state;
-                    comment.remote_review_id = Some(review_id.clone());
-                }
-            }
-            for comments in review.line_comments.values_mut() {
-                for comment in comments.iter_mut() {
-                    if target_ids.contains(comment.id.as_str()) {
-                        comment.lifecycle_state = new_state;
-                        comment.remote_review_id = Some(review_id.clone());
-                    }
-                }
-            }
+            review.file_comments.iter_mut().for_each(mark);
+            review.line_comments.values_mut().flatten().for_each(mark);
         }
         self.rebuild_annotations();
     }

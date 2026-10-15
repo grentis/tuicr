@@ -531,7 +531,8 @@ where
             SubmitEvent::Comment
             | SubmitEvent::Approve
             | SubmitEvent::RequestChanges
-            | SubmitEvent::Draft => {}
+            | SubmitEvent::Draft
+            | SubmitEvent::Replies => {}
         }
 
         // Draft submissions create GitLab draft notes (the pending-review

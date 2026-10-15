@@ -800,6 +800,8 @@ pub const SUBMIT_PICKER_EVENTS: &[(&str, crate::forge::submit::SubmitEvent)] = &
         crate::forge::submit::SubmitEvent::RequestChanges,
     ),
     ("Draft", crate::forge::submit::SubmitEvent::Draft),
+    // Last, so `App::submit_picker_events` can leave it out.
+    ("Replies only", crate::forge::submit::SubmitEvent::Replies),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1011,6 +1013,15 @@ pub enum PrSubmitEvent {
         pr_number: u64,
         head_sha: String,
         result: std::result::Result<crate::forge::traits::GhCreateReviewResponse, String>,
+    },
+    /// `:submit replies`: the posted replies' comment ids, in order, and the
+    /// error that stopped the rest.
+    RepliesDone {
+        repository: crate::forge::traits::ForgeRepository,
+        pr_number: u64,
+        head_sha: String,
+        sent: Vec<String>,
+        error: Option<String>,
     },
 }
 

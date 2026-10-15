@@ -638,7 +638,7 @@ impl ForgeBackend for AzureDevOpsBackend {
         let vote = match request.event {
             SubmitEvent::Approve => Some(10),
             SubmitEvent::RequestChanges => Some(-10),
-            SubmitEvent::Comment | SubmitEvent::Draft => None,
+            SubmitEvent::Comment | SubmitEvent::Draft | SubmitEvent::Replies => None,
         };
         if let Some(vote) = vote {
             let user_id = self.current_user_id(&pr.repository)?.ok_or_else(|| {
@@ -659,7 +659,7 @@ impl ForgeBackend for AzureDevOpsBackend {
         let state = match request.event {
             SubmitEvent::Approve => "APPROVED",
             SubmitEvent::RequestChanges => "CHANGES_REQUESTED",
-            SubmitEvent::Comment | SubmitEvent::Draft => "COMMENTED",
+            SubmitEvent::Comment | SubmitEvent::Draft | SubmitEvent::Replies => "COMMENTED",
         };
         Ok(GhCreateReviewResponse {
             id: first_thread_id,

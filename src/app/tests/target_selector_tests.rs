@@ -2420,7 +2420,7 @@ fn should_cycle_backward_through_command_matches() {
     // when
     crate::handler::handle_command_action(&mut app, crate::input::Action::CompleteCommandReverse);
     // then
-    assert_eq!(app.command_buffer, "submit draft");
+    assert_eq!(app.command_buffer, "submit replies");
 }
 
 #[test]

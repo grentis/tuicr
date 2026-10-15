@@ -686,7 +686,7 @@ impl ForgeBackend for GerritBackend {
             state: match request.event {
                 SubmitEvent::Approve => "APPROVED",
                 SubmitEvent::RequestChanges => "CHANGES_REQUESTED",
-                SubmitEvent::Comment | SubmitEvent::Draft => "COMMENTED",
+                SubmitEvent::Comment | SubmitEvent::Draft | SubmitEvent::Replies => "COMMENTED",
             }
             .to_string(),
         })
@@ -766,7 +766,7 @@ fn review_vote(event: SubmitEvent) -> Option<i32> {
     match event {
         SubmitEvent::Approve => Some(2),
         SubmitEvent::RequestChanges => Some(-1),
-        SubmitEvent::Comment | SubmitEvent::Draft => None,
+        SubmitEvent::Comment | SubmitEvent::Draft | SubmitEvent::Replies => None,
     }
 }
 

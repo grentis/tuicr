@@ -96,6 +96,10 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         CommandKind::Submit(SubmitEvent::RequestChanges),
     ),
     CommandSpec::new(&["submit draft"], CommandKind::Submit(SubmitEvent::Draft)),
+    CommandSpec::new(
+        &["submit replies"],
+        CommandKind::Submit(SubmitEvent::Replies),
+    ),
     CommandSpec::new(&["summary"], CommandKind::Summary),
     CommandSpec::new(&["theme"], CommandKind::ThemePicker),
     CommandSpec::new(

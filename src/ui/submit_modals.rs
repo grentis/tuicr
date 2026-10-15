@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-use crate::app::{App, SUBMIT_PICKER_EVENTS};
+use crate::app::App;
 use crate::forge::submit::{ResolverAction, SubmitEvent, UnmappableItem};
 use crate::ui::styles;
 
@@ -32,7 +32,7 @@ pub fn render_submit_action_picker(frame: &mut Frame, app: &App) {
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(""));
-    for (i, (label, _)) in SUBMIT_PICKER_EVENTS.iter().enumerate() {
+    for (i, (label, _)) in app.submit_picker_events().iter().enumerate() {
         let style = if i == app.submit_picker_cursor {
             Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
         } else {
@@ -136,6 +136,7 @@ pub fn render_submit_confirm(frame: &mut Frame, app: &App) {
     let forge = app.forge_display_name();
     let title = match state.event {
         SubmitEvent::Draft => format!(" Push pending {forge} review? "),
+        SubmitEvent::Replies => format!(" Send replies to {forge}? "),
         _ => format!(" Submit review to {forge}? "),
     };
 
@@ -165,13 +166,25 @@ pub fn render_submit_confirm(frame: &mut Frame, app: &App) {
             label = state.event.human_label()
         )));
     }
-    lines.push(Line::from(format!("Inline: {n}", n = state.mappable.len())));
-    if !state.replies.is_empty() {
+    if matches!(state.event, SubmitEvent::Replies) {
         lines.push(Line::from(format!("Replies: {n}", n = state.replies.len())));
+        lines.push(Line::from(Span::styled(
+            "Each reply is posted on its own, outside a review.",
+            Style::default().fg(theme.fg_secondary),
+        )));
+        lines.push(Line::from(Span::styled(
+            "Other drafts stay local.",
+            Style::default().fg(theme.fg_secondary),
+        )));
+    } else {
+        lines.push(Line::from(format!("Inline: {n}", n = state.mappable.len())));
+        if !state.replies.is_empty() {
+            lines.push(Line::from(format!("Replies: {n}", n = state.replies.len())));
+        }
+        lines.push(Line::from(format!("Moved to summary: {moved_count}")));
+        lines.push(Line::from(format!("Omitted: {omit_count}")));
+        lines.push(Line::from(format!("Body: {body_summary}")));
     }
-    lines.push(Line::from(format!("Moved to summary: {moved_count}")));
-    lines.push(Line::from(format!("Omitted: {omit_count}")));
-    lines.push(Line::from(format!("Body: {body_summary}")));
     lines.push(Line::from(format!(
         "Head: {sha}",
         sha = short_sha(&state.commit_id)
@@ -261,6 +274,7 @@ fn short_sha(sha: &str) -> String {
 fn prompt_spans(stale: bool, event: SubmitEvent) -> Vec<Span<'static>> {
     let primary = match event {
         SubmitEvent::Draft => "push draft",
+        SubmitEvent::Replies => "send",
         _ => "submit",
     };
     let mut spans = vec![
