@@ -161,6 +161,9 @@ impl App {
         let Some(base) = self.branch_base().map(str::to_owned) else {
             return Ok(false);
         };
+        if with_status {
+            self.refresh_git_file_states();
+        }
         let commit_ids = Self::branch_commit_ids(self.vcs.as_ref(), &base)?;
         let status = if with_status {
             Some(Self::get_change_status_with_ignore(
@@ -180,24 +183,7 @@ impl App {
             return Ok(false);
         }
 
-        if rows != self.review_commits {
-            // An all-commits selection takes in new commits; a narrowed one
-            // keeps its commits, or falls back to the whole branch once they
-            // are gone (rebase, amend).
-            let range = match Self::reanchored_commit_selection(
-                self.commit_selection_range,
-                &self.review_commits,
-                &rows,
-            ) {
-                CommitSelectionAnchor::Moved(range) => range,
-                CommitSelectionAnchor::Lost => (!rows.is_empty()).then(|| (0, rows.len() - 1)),
-            };
-            let had_selector = self.review_commits.len() > 1;
-            self.install_refreshed_commit_pane(rows, range);
-            if !had_selector && self.review_commits.len() > 1 {
-                self.show_commit_selector = true;
-            }
-        }
+        self.apply_branch_commit_rows(rows);
 
         self.diff_source = diff_source;
         self.session.commit_range = (!commit_ids.is_empty()).then(|| commit_ids.clone());
@@ -205,6 +191,27 @@ impl App {
             self.dirty = true;
         }
         Ok(true)
+    }
+
+    /// Install refreshed commit rows. An all-commits selection takes new commits; a narrowed one
+    /// keeps its own, or widens to the whole branch once they are gone (rebase, amend).
+    pub(in crate::app) fn apply_branch_commit_rows(&mut self, rows: Vec<CommitInfo>) {
+        if rows == self.review_commits {
+            return;
+        }
+        let range = match Self::reanchored_commit_selection(
+            self.commit_selection_range,
+            &self.review_commits,
+            &rows,
+        ) {
+            CommitSelectionAnchor::Moved(range) => range,
+            CommitSelectionAnchor::Lost => (!rows.is_empty()).then(|| (0, rows.len() - 1)),
+        };
+        let had_selector = self.review_commits.len() > 1;
+        self.install_refreshed_commit_pane(rows, range);
+        if !had_selector && self.review_commits.len() > 1 {
+            self.show_commit_selector = true;
+        }
     }
 
     /// Commits HEAD has on top of `base`, oldest first. `base...HEAD`, so the

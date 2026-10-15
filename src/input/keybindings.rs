@@ -39,6 +39,8 @@ pub enum Action {
     ToggleReviewed,
     /// With `jump_to_next_unreviewed`, go back to the file the last `r` marked.
     JumpToLastMarkedReviewed,
+    /// Stage or unstage the file or directory at the cursor (`git_actions`, `--branch`).
+    ToggleStaged,
     ToggleHunkReviewed,
     AddLineComment,
     AddFileComment,
@@ -277,6 +279,7 @@ fn map_normal_mode_with_q_quits(key: KeyEvent, leader_key: char, q_quits: bool) 
         (KeyCode::Char('r'), KeyModifiers::NONE) => Action::ToggleReviewed,
         (KeyCode::Char('R'), _) => Action::ToggleHunkReviewed,
         (KeyCode::Char('o'), KeyModifiers::CONTROL) => Action::JumpToLastMarkedReviewed,
+        (KeyCode::Char('s'), KeyModifiers::NONE) => Action::ToggleStaged,
         (KeyCode::Char('c'), KeyModifiers::NONE) => Action::AddLineComment,
         (KeyCode::Char('C'), _) => Action::AddFileComment,
         (KeyCode::Char('i'), KeyModifiers::NONE) => Action::EditComment,

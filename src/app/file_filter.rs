@@ -52,6 +52,7 @@ impl App {
         self.file_matches_patterns(file)
             && (self.file_filter.show_reviewed
                 || !self.session.is_file_reviewed(file.display_path()))
+            && self.passes_uncommitted_filter(file.display_path())
     }
 
     /// `file_passes_filter` by index, for the loops that only carry an index.
@@ -311,7 +312,7 @@ impl App {
     /// Re-derive everything that depends on which files are visible, then
     /// make sure the cursor and tree selection aren't parked on a file that
     /// just disappeared.
-    fn apply_file_filter_change(&mut self) {
+    pub(in crate::app) fn apply_file_filter_change(&mut self) {
         self.rebuild_annotations();
 
         let visible = self.filtered_file_indices();

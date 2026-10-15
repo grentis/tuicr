@@ -364,6 +364,12 @@ fn main() -> anyhow::Result<()> {
         .as_ref()
         .and_then(|cfg| cfg.keep_reviewed_on_quit)
         .unwrap_or(false);
+    app.git_actions = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.git_actions)
+        .unwrap_or(false);
+    app.refresh_git_file_states();
     app.commit_selection_start = commit_selection;
     app.pending_start_line = cli_args.start_line;
 

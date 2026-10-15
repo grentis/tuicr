@@ -34,6 +34,7 @@ const COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec::new(&["copy-url"], CommandKind::CopyUrl),
     CommandSpec::new(&["open"], CommandKind::Open),
     CommandSpec::new(&["expand"], CommandKind::Expand),
+    CommandSpec::new(&["uncommitted"], CommandKind::ToggleOnlyUncommitted),
     CommandSpec::new(
         &["clear"],
         CommandKind::Clear(ClearScope::CommentsAndReviewed),
@@ -145,6 +146,7 @@ enum CommandKind {
     CopyUrl,
     Open,
     Expand,
+    ToggleOnlyUncommitted,
     Clear(ClearScope),
     Help,
     MessageDetails,
@@ -934,6 +936,10 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
             app.toggle_file_expansion();
             CommandAfterDispatch::ExitCommandMode
         }
+        CommandKind::ToggleOnlyUncommitted => {
+            app.toggle_only_uncommitted();
+            CommandAfterDispatch::ExitCommandMode
+        }
         CommandKind::Clear(scope) => {
             app.clear_comments(scope);
             CommandAfterDispatch::ExitCommandMode
@@ -1623,6 +1629,11 @@ pub fn handle_file_list_action(app: &mut App, action: Action) {
             }
             None => app.set_warning("Select a file to toggle reviewed"),
         },
+        Action::ToggleStaged => match app.get_selected_tree_item() {
+            Some(FileTreeItem::File { file_idx, .. }) => app.toggle_staged_for_file_idx(file_idx),
+            Some(FileTreeItem::Directory { path, .. }) => app.toggle_staged_for_directory(&path),
+            None => {}
+        },
         _ => handle_shared_normal_action(app, action),
     }
 }
@@ -1816,6 +1827,11 @@ fn handle_shared_normal_action(app: &mut App, action: Action) {
         Action::PrevComment => app.prev_comment(),
         Action::ToggleReviewed => app.toggle_reviewed(),
         Action::JumpToLastMarkedReviewed => app.jump_to_last_marked_reviewed(),
+        Action::ToggleStaged => {
+            if !app.is_cursor_in_overview() {
+                app.toggle_staged_for_file_idx(app.diff_state.current_file_idx);
+            }
+        }
         Action::ToggleHunkReviewed => app.toggle_hunk_reviewed(),
         Action::ToggleFocus => {
             let has_selector = app.has_inline_commit_selector();

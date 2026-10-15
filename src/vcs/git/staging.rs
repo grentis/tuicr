@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::vcs::git::diff::fresh_index;
+use crate::vcs::traits::VcsChangeStatus;
 
 pub fn stage_file(repo: &Repository, path: &Path) -> Result<()> {
     // A stale index written back would undo what was staged meanwhile.
@@ -16,6 +17,46 @@ pub fn stage_file(repo: &Repository, path: &Path) -> Result<()> {
         index.remove_path(path)?;
     }
     index.write()?;
+    Ok(())
+}
+
+/// Staged and unstaged changes of one path (untracked counts as unstaged).
+pub fn path_change_status(repo: &Repository, path: &Path) -> Result<VcsChangeStatus> {
+    let status = match repo.status_file(path) {
+        Ok(status) => status,
+        // Neither in HEAD, the index nor the working tree: nothing to commit.
+        Err(e) if e.code() == git2::ErrorCode::NotFound => git2::Status::CURRENT,
+        Err(e) => return Err(e.into()),
+    };
+    let staged = status.intersects(
+        git2::Status::INDEX_NEW
+            | git2::Status::INDEX_MODIFIED
+            | git2::Status::INDEX_DELETED
+            | git2::Status::INDEX_RENAMED
+            | git2::Status::INDEX_TYPECHANGE,
+    );
+    let unstaged = status.intersects(
+        git2::Status::WT_NEW
+            | git2::Status::WT_MODIFIED
+            | git2::Status::WT_DELETED
+            | git2::Status::WT_RENAMED
+            | git2::Status::WT_TYPECHANGE,
+    );
+    Ok(VcsChangeStatus { staged, unstaged })
+}
+
+/// `git reset -- <path>`: reset the index entry to HEAD's, or drop it when HEAD lacks the file (or
+/// there is no HEAD).
+pub fn unstage_file(repo: &Repository, path: &Path) -> Result<()> {
+    // The reset writes the index back: re-read it first.
+    let mut index = fresh_index(repo)?;
+    match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
+        Some(head) => repo.reset_default(Some(head.as_object()), [path])?,
+        None => {
+            index.remove_path(path)?;
+            index.write()?;
+        }
+    }
     Ok(())
 }
 

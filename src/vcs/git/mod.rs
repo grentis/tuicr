@@ -410,6 +410,20 @@ impl VcsBackend for GitBackend {
             Self::Cli(backend) => backend.stage_file(path),
         }
     }
+
+    fn unstage_file(&self, path: &Path) -> Result<()> {
+        match self {
+            Self::Libgit2(backend) => backend.unstage_file(path),
+            Self::Cli(backend) => backend.unstage_file(path),
+        }
+    }
+
+    fn path_change_status(&self, path: &Path) -> Result<VcsChangeStatus> {
+        match self {
+            Self::Libgit2(backend) => backend.path_change_status(path),
+            Self::Cli(backend) => backend.path_change_status(path),
+        }
+    }
 }
 
 #[cfg(test)]

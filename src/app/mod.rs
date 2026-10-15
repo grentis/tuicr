@@ -1078,6 +1078,7 @@ pub struct ViewedSyncWorker {
 }
 
 pub use branch::default_branch_base;
+pub use git_actions::GitFileState;
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
 pub use thread_reply::ThreadReplyTarget;
 
@@ -1582,6 +1583,11 @@ pub struct App {
     /// Config `keep_reviewed_on_quit`: `q` / `:q` / `ZZ` save the session
     /// instead of discarding reviewed-only state (or warning about it).
     pub keep_reviewed_on_quit: bool,
+    /// Config `git_actions`: git actions in a `--branch` review.
+    pub git_actions: bool,
+    /// Staged/unstaged state of each file with uncommitted changes, while git actions are on.
+    /// Absent means none.
+    pub git_file_states: HashMap<PathBuf, GitFileState>,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;
@@ -1827,6 +1833,8 @@ pub struct FileTreeFilter {
     /// False hides files marked reviewed from the tree and the diff (`H`,
     /// `:set noreviewed`, config `show_reviewed`).
     pub show_reviewed: bool,
+    /// Show only files with uncommitted changes (`:uncommitted`, git actions only).
+    pub only_uncommitted: bool,
 }
 
 impl Default for FileTreeFilter {
@@ -1839,6 +1847,7 @@ impl Default for FileTreeFilter {
             search: None,
             draft: None,
             show_reviewed: true,
+            only_uncommitted: false,
         }
     }
 }
@@ -2043,6 +2052,7 @@ mod diff_load;
 mod editor_target;
 mod file_filter;
 mod gaps;
+mod git_actions;
 mod init;
 mod local_reply;
 mod mentions;

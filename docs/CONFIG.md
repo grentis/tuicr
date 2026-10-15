@@ -60,6 +60,7 @@ jump_to_next_unreviewed = false
 comment_style = "boxes"
 keep_reviewed_on_quit = false
 # branch_base = "main"
+git_actions = false
 diff_watch_interval_ms = 0
 
 backend = "libgit2"
@@ -138,6 +139,7 @@ session_header = true
 | `list_comment_replies`     | `false`      | List each reply of a forge thread in the comment navigator, indented under the thread as `↳ @author`, and set local replies to a thread apart the same way. Every comment and thread, yours included, is listed with its author ahead of the location (`@alice src/lib.rs:12`). `Enter` on a reply moves to it inside the thread. `false` lists a thread as one entry. |
 | `jump_to_next_unreviewed`  | `false`      | After `r` marks a file reviewed in the diff, move the cursor to the next file not yet reviewed, as `}` would, wrapping round to the first. The status bar names the file marked, and `Ctrl-o` goes back to it. When it was the last one, the cursor stays and the status bar says so. Unmarking never moves. `false` keeps the cursor on the file just marked. |
 | `comment_style`            | `boxes`      | How comments are drawn in the diff. `boxes`: each comment in its own box, with a marker line up to the line it is on. `threads`: as forge threads are drawn, one box per thread with each reply as an `↳ @author` divider, every box in one colour with its author in the header, and no marker line, for local and forge comments alike. |
+| `git_actions`              | `false`      | Offer git actions in a `--branch` review of a git repository: `s` stages or unstages the file or directory under the cursor, the file tree marks each file `●` staged, `○` unstaged, `◐` partly staged or `·` with no uncommitted changes, and `:uncommitted` shows only the files with something left to commit. Ignored outside `--branch`. |
 | `backend`                  | `libgit2`    | Git backend: `libgit2` or `cli`. Sparse-checkout repos auto-route to `cli`.                                                                                |
 | `comment_types`            | (none)       | Comment categories. Untyped by default. See [Comment types](#comment-types).                                                                               |
 | `export_legend`            | `true`       | Include the `Comment types:` legend in the exported review. Superseded by `legend` under [Export](#export).                                                |

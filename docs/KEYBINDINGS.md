@@ -179,6 +179,7 @@ Shown below the file tree when local comments or visible remote PR threads exist
 |-----|--------|
 | `r` | Toggle file reviewed (syncs with GitHub's *Viewed* checkbox via `[forge] sync_viewed`) |
 | `Ctrl-o` | With `jump_to_next_unreviewed`, go back to the file the last `r` marked, to look at it again or unmark it with `r` |
+| `s` | With `git_actions` in a `--branch` review: stage the file at the cursor, or unstage it when it has nothing unstaged; on a tree directory, stage everything under it, or unstage it all once nothing is left unstaged. Files without uncommitted changes are left alone |
 | `R` | Toggle hunk reviewed |
 | `c` | Add line comment (or file comment if not on a diff line); on a GitHub thread, reply to it; with `[forge] extended_comments`, on a local comment in a local review, reply to it in its thread |
 | `C` | Add file comment |
@@ -306,6 +307,7 @@ In command mode,
 | `:open` | Open the PR in the default browser (PR mode) |
 | `:summary` | Show all pending local-draft comments; `j`/`k` select and `Enter` jumps |
 | `:diff` | Toggle diff view (unified / side-by-side) |
+| `:uncommitted` | With `git_actions` in a `--branch` review: show only the files with uncommitted changes, or all files again |
 | `:expand` | Show the whole current file by opening every hidden gap around its changes; run it again to show only the changes. A partly opened file is opened fully first. Also `<leader>x` |
 | `:theme` | Open the runtime theme picker (live preview; `/` filters, `Enter` applies and saves, `Esc` reverts) |
 | `:theme <name>` | Apply and save `<name>` directly, without opening the picker |
