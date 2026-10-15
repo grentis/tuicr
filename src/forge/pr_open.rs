@@ -40,12 +40,19 @@ pub struct OpenedPullRequest {
     pub review_metadata: PullRequestReviewMetadata,
     /// Extended PR metadata for the description panel.
     pub pr_info: PullRequestInfo,
+    /// Why the diff could not be loaded, when the PR opened without it
+    /// (`diff_files` is then empty). The rest of the PR is usable.
+    pub diff_error: Option<String>,
 }
+
+/// The PR's diff as fetched: its patches, or why the forge would not serve
+/// them. A failed diff does not fail the open; the PR opens without it.
+pub type PrPatches = std::result::Result<Vec<FilePatch>, String>;
 
 /// Send-safe data fetched before the main thread materializes diff hunks.
 pub type PrFetchData = (
     PullRequestDetails,
-    Vec<FilePatch>,
+    PrPatches,
     Vec<PullRequestCommit>,
     PullRequestReviewMetadata,
     PullRequestInfo,
@@ -63,7 +70,7 @@ pub fn open_pull_request(
     highlighter: &SyntaxHighlighter,
 ) -> Result<OpenedPullRequest> {
     let (details, patches, commits, review_metadata, pr_info) = fetch_pr_data(backend, target)?;
-    prepare_open_pr(
+    prepare_fetched_pr(
         details,
         patches,
         commits,
@@ -80,7 +87,9 @@ pub fn open_pull_request(
 ///
 /// The commit list is best-effort: if the forge fails on that endpoint
 /// only, we still return the diff so PR review proceeds without the
-/// inline selector. The first two calls remain required.
+/// inline selector. The PR's metadata is required; its diff is not: when
+/// only the diff fails (a PR over GitHub's 300-file limit, say), the error
+/// travels in place of the patches so the PR still opens, without a diff.
 pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> Result<PrFetchData> {
     let mut pr_info = backend.get_pull_request_info(target)?;
     // Pin `base_sha` to the commit the displayed patch is actually taken
@@ -92,7 +101,9 @@ pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> R
         pr_info.details.base_sha = base_sha;
     }
     let details = pr_info.details.clone();
-    let patches = backend.get_pull_request_diff(&details)?;
+    let patches = backend
+        .get_pull_request_diff(&details)
+        .map_err(|e| e.to_string());
     let commits = backend
         .list_pull_request_commits(&details)
         .unwrap_or_default();
@@ -100,6 +111,47 @@ pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> R
         .list_pull_request_review_metadata(&details)
         .unwrap_or_default();
     Ok((details, patches, commits, review_metadata, pr_info))
+}
+
+/// Main-thread half of the PR open for fetched data: the usual preparation
+/// when the diff came, or the PR without a diff when it did not.
+pub fn prepare_fetched_pr(
+    details: PullRequestDetails,
+    patches: PrPatches,
+    commits: Vec<PullRequestCommit>,
+    review_metadata: PullRequestReviewMetadata,
+    pr_info: PullRequestInfo,
+    local_checkout: Option<&Path>,
+    highlighter: &SyntaxHighlighter,
+) -> Result<OpenedPullRequest> {
+    let patches = match patches {
+        Ok(patches) => patches,
+        Err(diff_error) => {
+            let key = PrSessionKey::from_details(&details);
+            let session = build_session(&details, &key, &[]);
+            let mut commits = commits;
+            commits.reverse();
+            return Ok(OpenedPullRequest {
+                details,
+                diff_files: Vec::new(),
+                session,
+                key,
+                commits,
+                review_metadata,
+                pr_info,
+                diff_error: Some(diff_error),
+            });
+        }
+    };
+    prepare_open_pr(
+        details,
+        patches,
+        commits,
+        review_metadata,
+        pr_info,
+        local_checkout,
+        highlighter,
+    )
 }
 
 /// CPU-only half of the PR open path: apply `.tuicrignore` to the raw
@@ -152,6 +204,7 @@ pub fn prepare_open_pr(
         commits,
         review_metadata,
         pr_info,
+        diff_error: None,
     })
 }
 

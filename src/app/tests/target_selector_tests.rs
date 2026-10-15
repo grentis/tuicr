@@ -2004,7 +2004,7 @@ fn should_carry_reviewed_state_through_finish_pr_reload_when_head_advances() {
     details_b.head_sha = "bbbbbbbbbbbbbbbb".to_string();
     app.finish_pr_reload(
         details_b.clone(),
-        structured_patch(&two_file_patch("newer changed")),
+        Ok(structured_patch(&two_file_patch("newer changed"))),
         Vec::new(),
         PullRequestReviewMetadata::default(),
         crate::forge::traits::PullRequestInfo::from_details(details_b),
@@ -2055,7 +2055,7 @@ fn should_keep_reviewed_state_through_finish_pr_reload_when_head_unchanged() {
     // when the async reload finish path refreshes the same head
     app.finish_pr_reload(
         details.clone(),
-        structured_patch(&two_file_patch("new changed")),
+        Ok(structured_patch(&two_file_patch("new changed"))),
         Vec::new(),
         PullRequestReviewMetadata::default(),
         crate::forge::traits::PullRequestInfo::from_details(details),
@@ -2812,7 +2812,9 @@ fn configured_comments_visibility_seeds_the_async_pr_open_path() {
         request,
         result: Ok((
             details.clone(),
-            structured_patch(crate::forge::github::gh::tests_fixture::SIMPLE_PATCH),
+            Ok(structured_patch(
+                crate::forge::github::gh::tests_fixture::SIMPLE_PATCH,
+            )),
             Vec::new(),
             crate::forge::traits::PullRequestReviewMetadata::default(),
             crate::forge::traits::PullRequestInfo::from_details(details.clone()),
@@ -3034,7 +3036,9 @@ fn pr_open_landing_mid_delete_prompt_drops_the_prompt() {
         request,
         result: Ok((
             details.clone(),
-            structured_patch(crate::forge::github::gh::tests_fixture::SIMPLE_PATCH),
+            Ok(structured_patch(
+                crate::forge::github::gh::tests_fixture::SIMPLE_PATCH,
+            )),
             Vec::new(),
             crate::forge::traits::PullRequestReviewMetadata::default(),
             crate::forge::traits::PullRequestInfo::from_details(details.clone()),
