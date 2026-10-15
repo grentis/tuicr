@@ -2938,6 +2938,32 @@ Match host github-work
     }
 
     #[test]
+    fn should_send_a_standalone_reply_outside_any_review() {
+        // given
+        let backend = replies_backend();
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+        // when
+        backend
+            .reply_to_thread(&details, &thread_reply("PRRT_a", "fine"))
+            .unwrap();
+        // then — one reply, tied to no review, and no review created
+        let calls = backend.runner.calls.borrow();
+        let graphql = graphql_calls(&calls);
+        assert_eq!(graphql.len(), 1);
+        assert_eq!(field(&graphql[0], "thread"), Some("PRRT_a"));
+        assert_eq!(field(&graphql[0], "body"), Some("fine"));
+        assert_eq!(field(&graphql[0], "review"), None);
+        assert!(
+            !field(&graphql[0], "query")
+                .unwrap()
+                .contains("pullRequestReviewId")
+        );
+        assert!(backend.runner.stdin_calls.borrow().is_empty());
+    }
+
+    #[test]
     fn should_create_a_review_directly_when_there_are_no_replies() {
         // given
         let runner = FakeGhRunner::default();
