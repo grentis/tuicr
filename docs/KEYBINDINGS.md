@@ -308,11 +308,12 @@ In command mode,
 | `:commits` (`:targets`) | Select commits to review |
 | `:prs` | Open the review target selector on Pull Requests |
 | `:sessions` (`:reviews`) | Resume a saved review for this checkout |
-| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft) |
+| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft, plus Replies only with `[forge] extended_comments`) |
 | `:submit comment` | Submit a Comment review |
 | `:submit approve` | Submit an Approve review |
 | `:submit request-changes` | Submit a Request-changes review |
 | `:submit draft` | Submit a Draft (pending) review |
+| `:submit replies` | Send only the replies to existing threads, each on its own, outside any review (GitHub, `[forge] extended_comments`) |
 | `:comments unresolved` | Show unresolved remote comments (PR mode, default) |
 | `:comments all` | Show all remote comments including resolved and outdated |
 | `:comments hide` | Hide remote comments in PR mode |
@@ -380,8 +381,17 @@ GitHub PR review opens the comment box to answer it. The answer is a local draft
 thread with a `↳ reply to @author` tag, and `i` / `dd` edit or delete it until
 it is sent. `:submit` sends it as a reply inside that thread, as part of the
 same review as your new comments, so it shares the review's event (Comment,
-Approve, Request changes, or Draft, which leaves it pending). Replies to
-threads on other forges are not supported.
+Approve, Request changes, or Draft, which leaves it pending). On GitHub's
+Conversation tab such a reply then shows twice: in its thread, and again under
+the review.
+
+`:submit replies` (or "Replies only" in the `:submit` picker), also with
+`extended_comments = true`, sends just the replies, each on its own, as GitHub's plain "Reply" button does: no review is
+created around them, so they show in their threads only. New comments and the
+review summary stay local drafts for a later `:submit`. Replies are sent one
+at a time; if one fails, the ones before it stay sent and the rest stay
+drafts, so running it again sends the rest. Replies to threads on other forges
+are not supported.
 
 ## Commit selection / review target selector
 

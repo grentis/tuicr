@@ -1270,7 +1270,7 @@ fn check_body_requirement(event: SubmitEvent, body: &str, no_inline_comments: bo
 /// a pending draft.
 fn gitea_review_event(event: SubmitEvent) -> Option<&'static str> {
     match event {
-        SubmitEvent::Comment => Some("COMMENT"),
+        SubmitEvent::Comment | SubmitEvent::Replies => Some("COMMENT"),
         SubmitEvent::Approve => Some("APPROVED"),
         SubmitEvent::RequestChanges => Some("REQUEST_CHANGES"),
         SubmitEvent::Draft => None,

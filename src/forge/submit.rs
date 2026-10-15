@@ -63,17 +63,22 @@ pub enum SubmitEvent {
     RequestChanges,
     /// `:submit draft` — create a pending GitHub review (no `event` field).
     Draft,
+    /// `:submit replies`: post only the replies, each on its own; other drafts
+    /// stay local. They go through `ForgeBackend::reply_to_thread`, so
+    /// `create_review` never sees this event and may treat it as `Comment`.
+    Replies,
 }
 
 impl SubmitEvent {
     /// GitHub `event` field value, if any. `Draft` returns `None` because the
-    /// pending-review behavior is triggered by omitting `event`.
+    /// pending-review behavior is triggered by omitting `event`; `Replies`
+    /// does too, as it creates no review at all.
     pub fn github_event(self) -> Option<&'static str> {
         match self {
             SubmitEvent::Comment => Some("COMMENT"),
             SubmitEvent::Approve => Some("APPROVE"),
             SubmitEvent::RequestChanges => Some("REQUEST_CHANGES"),
-            SubmitEvent::Draft => None,
+            SubmitEvent::Draft | SubmitEvent::Replies => None,
         }
     }
 
@@ -84,6 +89,7 @@ impl SubmitEvent {
             SubmitEvent::Approve => "Approve",
             SubmitEvent::RequestChanges => "Request changes",
             SubmitEvent::Draft => "Draft (pending review)",
+            SubmitEvent::Replies => "Replies only",
         }
     }
 }

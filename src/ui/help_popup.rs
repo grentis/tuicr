@@ -895,6 +895,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :submit replies",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(
+                "  Send only replies to threads, outside any review ([forge] extended_comments)",
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :set relativenumber[!]",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
