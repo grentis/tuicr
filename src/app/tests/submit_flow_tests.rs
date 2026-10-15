@@ -1453,3 +1453,137 @@ fn should_yank_top_level_pr_comment() {
         Some("Top-level PR comment".to_string())
     );
 }
+
+fn reply_comment(thread: &str) -> Comment {
+    let mut comment = line_comment(LineSide::New, Some(11), None);
+    comment.reply_to_thread = Some(thread.to_string());
+    comment
+}
+
+#[test]
+fn should_send_only_the_replies_when_submitting_replies_only() {
+    // given a new comment and a reply, both drafts
+    let mut app = make_pr_app_with_single_modified_file("src/lib.rs");
+    app.forge_config.extended_comments = true;
+    add_line_comment(
+        &mut app,
+        "src/lib.rs",
+        11,
+        line_comment(LineSide::New, Some(11), None),
+    );
+    let reply = reply_comment("PRRT_a");
+    let reply_id = reply.id.clone();
+    add_line_comment(&mut app, "src/lib.rs", 11, reply);
+    // when
+    app.start_submit(SubmitEvent::Replies);
+    // then only the reply is queued, with no review content
+    let state = app.submit_state.as_ref().expect("submit state");
+    assert_eq!(app.input_mode, InputMode::SubmitConfirm);
+    assert_eq!(state.replies.len(), 1);
+    assert_eq!(state.replies[0].comment_id, reply_id);
+    assert_eq!(state.replies[0].thread_id, "PRRT_a");
+    assert!(state.mappable.is_empty());
+    assert!(state.unmappable.is_empty());
+}
+
+#[test]
+fn should_refuse_replies_only_when_there_is_no_reply() {
+    // given only a new comment
+    let mut app = make_pr_app_with_single_modified_file("src/lib.rs");
+    app.forge_config.extended_comments = true;
+    add_line_comment(
+        &mut app,
+        "src/lib.rs",
+        11,
+        line_comment(LineSide::New, Some(11), None),
+    );
+    // when
+    app.start_submit(SubmitEvent::Replies);
+    // then
+    assert!(app.submit_state.is_none());
+    let message = &app.message.as_ref().expect("warning").content;
+    assert!(message.contains("No replies to send"), "{message}");
+}
+
+#[test]
+fn should_refuse_replies_only_with_extended_comments_off() {
+    // given a reply, with the key off
+    let mut app = make_pr_app_with_single_modified_file("src/lib.rs");
+    add_line_comment(&mut app, "src/lib.rs", 11, reply_comment("PRRT_a"));
+    // when
+    app.start_submit(SubmitEvent::Replies);
+    // then
+    assert!(app.submit_state.is_none());
+    let message = &app.message.as_ref().expect("warning").content;
+    assert!(message.contains("extended_comments"), "{message}");
+}
+
+#[test]
+fn should_offer_replies_only_in_the_picker_with_extended_comments() {
+    let mut app = make_pr_app_with_single_modified_file("src/lib.rs");
+    let labels =
+        |app: &App| -> Vec<&str> { app.submit_picker_events().iter().map(|(l, _)| *l).collect() };
+
+    assert!(!labels(&app).contains(&"Replies only"));
+
+    app.forge_config.extended_comments = true;
+    assert_eq!(labels(&app).last(), Some(&"Replies only"));
+}
+
+#[test]
+fn should_keep_unsent_replies_as_drafts_when_one_fails() {
+    // given two replies in flight
+    let mut app = make_pr_app_with_single_modified_file("src/lib.rs");
+    let first = reply_comment("PRRT_a");
+    let second = reply_comment("PRRT_b");
+    let (first_id, second_id) = (first.id.clone(), second.id.clone());
+    add_line_comment(&mut app, "src/lib.rs", 11, first);
+    add_line_comment(&mut app, "src/lib.rs", 11, second);
+    let mut in_flight = make_in_flight(SubmitEvent::Replies, &[], "abcdef0123", 0);
+    in_flight.replies = [("PRRT_a", &first_id), ("PRRT_b", &second_id)]
+        .into_iter()
+        .map(|(thread, id)| crate::forge::submit::ThreadReply {
+            thread_id: thread.to_string(),
+            body: "body".to_string(),
+            comment_id: id.clone(),
+        })
+        .collect();
+    app.pr_submit_state = Some(in_flight);
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.pr_submit_rx = Some(rx);
+    // when the first is sent and the second fails
+    tx.send(PrSubmitEvent::RepliesDone {
+        repository: ForgeRepository::github("github.com", "agavra", "tuicr"),
+        pr_number: 125,
+        head_sha: "abcdef0123".to_string(),
+        sent: vec![first_id.clone()],
+        error: Some("GraphQL: Could not resolve to a node".to_string()),
+    })
+    .unwrap();
+    app.poll_pr_submit_events();
+    // then the first is submitted, outside any review, and the second waits
+    let review = app.session.files.get(&PathBuf::from("src/lib.rs")).unwrap();
+    let comments = &review.line_comments[&11];
+    let state_of = |id: &str| comments.iter().find(|c| c.id == id).unwrap();
+    assert_eq!(
+        state_of(&first_id).lifecycle_state,
+        CommentLifecycleState::Submitted
+    );
+    assert!(state_of(&first_id).remote_review_id.is_none());
+    assert_eq!(
+        state_of(&second_id).lifecycle_state,
+        CommentLifecycleState::LocalDraft
+    );
+    let message = app.message.as_ref().expect("error");
+    assert_eq!(message.message_type, MessageType::Error);
+    assert!(
+        message.content.contains("Sent 1 of 2"),
+        "{}",
+        message.content
+    );
+    assert!(
+        message.content.contains("Could not resolve"),
+        "{}",
+        message.content
+    );
+}
