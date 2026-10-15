@@ -36,6 +36,14 @@ const ADD_THREAD_REPLY_MUTATION: &str = concat!(
     "pullRequestReviewThreadId:$thread,body:$body}){comment{id}}}"
 );
 
+/// Add a reply to a review thread on its own; GitHub files it in a review the
+/// timeline does not list.
+const ADD_STANDALONE_THREAD_REPLY_MUTATION: &str = concat!(
+    "mutation($thread:ID!,$body:String!){",
+    "addPullRequestReviewThreadReply(input:{",
+    "pullRequestReviewThreadId:$thread,body:$body}){comment{id}}}"
+);
+
 /// Publish a pending review with the chosen event.
 const SUBMIT_REVIEW_MUTATION: &str = concat!(
     "mutation($review:ID!,$event:PullRequestReviewEvent!){",
@@ -733,6 +741,19 @@ where
             response.state = event.to_string();
         }
         Ok(response)
+    }
+
+    fn reply_to_thread(
+        &self,
+        pr: &PullRequestDetails,
+        reply: &crate::forge::submit::ThreadReply,
+    ) -> Result<()> {
+        self.run_graphql(
+            pr,
+            ADD_STANDALONE_THREAD_REPLY_MUTATION,
+            &[("thread", &reply.thread_id), ("body", &reply.body)],
+        )
+        .map(|_| ())
     }
 
     fn create_pull_request_comment(

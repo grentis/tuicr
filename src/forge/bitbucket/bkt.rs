@@ -554,7 +554,7 @@ where
         // and Cloud's request-changes endpoint is not yet wired up here.
         // Reject up front rather than silently downgrading to a plain comment.
         match request.event {
-            SubmitEvent::Comment | SubmitEvent::Approve => {}
+            SubmitEvent::Comment | SubmitEvent::Approve | SubmitEvent::Replies => {}
             SubmitEvent::RequestChanges => {
                 return Err(TuicrError::UnsupportedOperation(
                     "Requesting changes is not supported for Bitbucket yet. \

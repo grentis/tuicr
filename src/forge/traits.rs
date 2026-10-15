@@ -701,6 +701,18 @@ pub trait ForgeBackend {
         self.create_review(pr, request)
     }
 
+    /// Answer a review thread with `reply` on its own, outside any review
+    /// (`:submit replies`), so GitHub shows it in its thread only.
+    fn reply_to_thread(
+        &self,
+        _pr: &PullRequestDetails,
+        _reply: &crate::forge::submit::ThreadReply,
+    ) -> Result<()> {
+        Err(crate::error::TuicrError::UnsupportedOperation(
+            "Replying to review threads is only supported on GitHub".into(),
+        ))
+    }
+
     /// Create a review on the PR. The payload-building details (event field
     /// mapping, comment serialization) are the backend's responsibility — the
     /// caller only supplies the high-level inputs. Returns a minimal response
