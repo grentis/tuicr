@@ -1,11 +1,13 @@
 use ratatui::{
-    style::Style,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::forge::traits::{
-    PullRequestCheckStatus, PullRequestInfo, PullRequestIssueComment, PullRequestReviewStatus,
+    PullRequestCheckStatus, PullRequestInfo, PullRequestIssueComment, PullRequestLabel,
+    PullRequestReviewStatus,
 };
 use crate::model::CommentType;
 use crate::theme::Theme;
@@ -224,6 +226,7 @@ pub fn build_pr_info_lines(
         ));
     }
     push_wrapped_line(&mut lines, branch_line, content_width);
+    push_label_lines(&mut lines, &info.labels, content_width);
 
     if !info.requested_reviewers.is_empty() {
         push_wrapped_line(
@@ -310,6 +313,55 @@ fn push_wrapped_line(lines: &mut Vec<Line<'static>>, text: String, width: usize)
     let style = Style::default();
     for chunk in wrap_text(&text, width) {
         lines.push(Line::from(Span::styled(chunk, style)));
+    }
+}
+
+/// `Labels:` and a chip per label, in the label's color as GitHub draws it,
+/// wrapping under the first chip when the row runs out of room.
+fn push_label_lines(lines: &mut Vec<Line<'static>>, labels: &[PullRequestLabel], width: usize) {
+    const PREFIX: &str = "Labels: ";
+    if labels.is_empty() {
+        return;
+    }
+    let indent = PREFIX.width();
+    let mut spans = vec![Span::raw(PREFIX)];
+    let mut used = indent;
+    for label in labels {
+        let chip = format!(" {} ", label.name.trim());
+        let chip_width = chip.width();
+        let gap = usize::from(used > indent);
+        if used > indent && used + gap + chip_width > width {
+            lines.push(Line::from(std::mem::take(&mut spans)));
+            spans.push(Span::raw(" ".repeat(indent)));
+            used = indent;
+        } else if gap > 0 {
+            spans.push(Span::raw(" "));
+            used += 1;
+        }
+        spans.push(Span::styled(chip, label_style(label)));
+        used += chip_width;
+    }
+    lines.push(Line::from(spans));
+}
+
+/// The label's color behind black or white text, whichever reads better on
+/// it. A label without a usable color is drawn reversed.
+fn label_style(label: &PullRequestLabel) -> Style {
+    let rgb = label.color.as_deref().and_then(|hex| {
+        let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+        Some((channel(0)?, channel(2)?, channel(4)?))
+    });
+    match rgb {
+        Some((r, g, b)) => {
+            let luma = 299 * u32::from(r) + 587 * u32::from(g) + 114 * u32::from(b);
+            let text = if luma > 150_000 {
+                Color::Black
+            } else {
+                Color::White
+            };
+            Style::default().bg(Color::Rgb(r, g, b)).fg(text)
+        }
+        None => Style::default().add_modifier(Modifier::REVERSED),
     }
 }
 
@@ -475,6 +527,7 @@ mod tests {
                 url: Some("https://github.com/owner/repo/pull/42#issuecomment-1".to_string()),
                 created_at: None,
             }],
+            labels: Vec::new(),
         }
     }
 

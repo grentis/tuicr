@@ -529,6 +529,14 @@ pub struct PullRequestIssueComment {
     pub created_at: Option<DateTime<Utc>>,
 }
 
+/// A label on a pull request, as GitHub shows it: a name on a colored chip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestLabel {
+    pub name: String,
+    /// Six hex digits, without the `#`, when the forge gives one.
+    pub color: Option<String>,
+}
+
 /// Extended PR metadata rendered at the top of the diff view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequestInfo {
@@ -542,6 +550,7 @@ pub struct PullRequestInfo {
     pub latest_reviews: Vec<PullRequestReviewStatus>,
     pub checks: Vec<PullRequestCheckStatus>,
     pub issue_comments: Vec<PullRequestIssueComment>,
+    pub labels: Vec<PullRequestLabel>,
 }
 
 impl PullRequestInfo {
@@ -557,6 +566,7 @@ impl PullRequestInfo {
             latest_reviews: Vec::new(),
             checks: Vec::new(),
             issue_comments: Vec::new(),
+            labels: Vec::new(),
         }
     }
 }

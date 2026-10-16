@@ -868,6 +868,7 @@ where
             latest_reviews,
             checks,
             issue_comments,
+            labels: Vec::new(),
         })
     }
 
