@@ -490,6 +490,36 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_labels_and_drop_unusable_colors() {
+        let json = format!(
+            r#"{{
+            {BASE_FIELDS},
+            "labels": [
+                {{ "id": "1", "name": "ci:forward", "description": "", "color": "bcf5db" }},
+                {{ "id": "2", "name": "odd", "color": "not-a-color" }},
+                {{ "id": "3", "name": "  " }}
+            ]
+        }}"#
+        );
+
+        let info = parse_pull_request_info(&json, &repo()).unwrap();
+
+        assert_eq!(
+            info.labels,
+            vec![
+                PullRequestLabel {
+                    name: "ci:forward".to_string(),
+                    color: Some("bcf5db".to_string()),
+                },
+                PullRequestLabel {
+                    name: "odd".to_string(),
+                    color: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn should_parse_wrapped_graphql_shapes() {
         let json = format!(
             r#"{{

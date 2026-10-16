@@ -2143,6 +2143,18 @@ Match host github-work
     }
 
     #[test]
+    fn should_ask_for_labels_in_every_pr_info_field_list() {
+        for fields in [
+            PR_INFO_JSON_FIELDS,
+            PR_INFO_JSON_FIELDS_WITHOUT_CHECKS,
+            PR_INFO_JSON_FIELDS_WITHOUT_COMMENTS,
+            PR_INFO_JSON_FIELDS_WITHOUT_CHECKS_OR_COMMENTS,
+        ] {
+            assert!(fields.split(',').any(|field| field == "labels"), "{fields}");
+        }
+    }
+
+    #[test]
     fn can_skip_pull_request_check_rollup() {
         let runner = FakeGhRunner::default();
         let backend = GitHubGhBackend::with_runner(Some(repo()), runner).with_pr_checks(false);
