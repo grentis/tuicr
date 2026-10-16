@@ -531,6 +531,74 @@ mod tests {
         }
     }
 
+    fn label(name: &str, color: Option<&str>) -> PullRequestLabel {
+        PullRequestLabel {
+            name: name.to_string(),
+            color: color.map(str::to_string),
+        }
+    }
+
+    fn text(line: &Line) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn should_show_labels_as_chips_in_their_color() {
+        // given: a light label, a dark one, and one without a color
+        let mut info = sample_info();
+        info.labels = vec![
+            label("ci:forward", Some("bcf5db")),
+            label("blocked", Some("5a1e02")),
+            label("plain", None),
+        ];
+
+        // when
+        let lines = build_pr_info_lines(&info, 80, &Theme::dark());
+
+        // then: one row after the branch line, each chip on its color
+        let row = lines
+            .iter()
+            .find(|line| text(line).starts_with("Labels: "))
+            .expect("labels row");
+        assert_eq!(text(row), "Labels:  ci:forward   blocked   plain ");
+        let chip = |name: &str| {
+            row.spans
+                .iter()
+                .find(|span| span.content.trim() == name)
+                .expect("chip")
+                .style
+        };
+        assert_eq!(chip("ci:forward").bg, Some(Color::Rgb(0xbc, 0xf5, 0xdb)));
+        assert_eq!(chip("ci:forward").fg, Some(Color::Black));
+        assert_eq!(chip("blocked").fg, Some(Color::White));
+        assert!(chip("plain").add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn should_wrap_labels_under_the_first_chip() {
+        let mut info = sample_info();
+        info.labels = vec![label("first-label", None), label("second-label", None)];
+
+        let lines = build_pr_info_lines(&info, 24, &Theme::dark());
+
+        let start = lines
+            .iter()
+            .position(|line| text(line).starts_with("Labels: "))
+            .expect("labels row");
+        assert_eq!(text(&lines[start]), "Labels:  first-label ");
+        assert_eq!(text(&lines[start + 1]), "         second-label ");
+    }
+
+    #[test]
+    fn should_leave_out_the_labels_row_without_labels() {
+        let lines = build_pr_info_lines(&sample_info(), 80, &Theme::dark());
+
+        assert!(!lines.iter().any(|line| text(line).contains("Labels:")));
+    }
+
     #[test]
     fn should_build_title_and_status_sections() {
         let lines = build_pr_info_lines(&sample_info(), 80, &Theme::dark());
