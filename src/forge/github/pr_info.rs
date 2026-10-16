@@ -11,7 +11,7 @@ use crate::error::{Result, TuicrError};
 use crate::forge::github::models::GhPullRequestDetails;
 use crate::forge::traits::{
     ForgeRepository, PullRequestCheckStatus, PullRequestInfo, PullRequestIssueComment,
-    PullRequestReviewStatus,
+    PullRequestLabel, PullRequestReviewStatus,
 };
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +37,8 @@ pub(crate) struct GhPullRequestInfoResponse {
         rename = "comments"
     )]
     issue_comments: Vec<PullRequestIssueComment>,
+    #[serde(default, deserialize_with = "deserialize_labels")]
+    labels: Vec<PullRequestLabel>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -173,6 +175,21 @@ enum GhIssueCommentsInput {
     Wrapped { nodes: Vec<GhIssueComment> },
 }
 
+#[derive(Debug, Deserialize)]
+struct GhLabel {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    color: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum GhLabelsInput {
+    Flat(Vec<GhLabel>),
+    Wrapped { nodes: Vec<GhLabel> },
+}
+
 pub(crate) fn parse_pull_request_info(
     json: &str,
     repository: &ForgeRepository,
@@ -213,6 +230,7 @@ impl GhPullRequestInfoResponse {
             latest_reviews: self.latest_reviews,
             checks: self.status_check_rollup,
             issue_comments: self.issue_comments,
+            labels: self.labels,
         })
     }
 }
@@ -300,6 +318,30 @@ where
             .filter_map(issue_comment_label)
             .collect(),
     })
+}
+
+fn deserialize_labels<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<PullRequestLabel>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<GhLabelsInput>::deserialize(deserializer)?;
+    Ok(match value {
+        None => Vec::new(),
+        Some(GhLabelsInput::Flat(labels) | GhLabelsInput::Wrapped { nodes: labels }) => labels
+            .into_iter()
+            .filter(|label| !label.name.trim().is_empty())
+            .map(|label| PullRequestLabel {
+                name: label.name,
+                color: label.color.filter(|color| is_hex_color(color)),
+            })
+            .collect(),
+    })
+}
+
+fn is_hex_color(color: &str) -> bool {
+    color.len() == 6 && color.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn issue_comment_label(comment: GhIssueComment) -> Option<PullRequestIssueComment> {
