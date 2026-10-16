@@ -58,24 +58,24 @@ const PR_VIEW_JSON_FIELDS: &str = concat!(
 );
 const PR_INFO_JSON_FIELDS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
-    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
+    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,labels,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews,",
     "statusCheckRollup,comments"
 );
 const PR_INFO_JSON_FIELDS_WITHOUT_CHECKS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
-    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
+    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,labels,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews,comments"
 );
 const PR_INFO_JSON_FIELDS_WITHOUT_COMMENTS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
-    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
+    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,labels,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews,",
     "statusCheckRollup"
 );
 const PR_INFO_JSON_FIELDS_WITHOUT_CHECKS_OR_COMMENTS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
-    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
+    "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,labels,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews"
 );
 

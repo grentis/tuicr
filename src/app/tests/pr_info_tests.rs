@@ -52,6 +52,7 @@ fn sample_pr_info() -> PullRequestInfo {
             url: Some("https://github.com/owner/repo/pull/42#issuecomment-1".to_string()),
             created_at: None,
         }],
+        labels: Vec::new(),
     }
 }
 
