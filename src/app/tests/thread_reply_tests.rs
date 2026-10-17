@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use super::pr_info_tests::build_pr_app;
-use crate::app::{AnnotatedLine, App, DiffSource, InputMode, SubmitInFlightState};
+use crate::app::{AnnotatedLine, App, DiffSource, DiffViewMode, InputMode, SubmitInFlightState};
 use crate::forge::remote_comments::{
     PrCommentsVisibility, RemoteCommentSide, RemoteReviewComment, RemoteReviewThread,
 };
@@ -226,4 +226,47 @@ fn should_not_reply_with_extended_comments_off() {
     handle_diff_action(&mut app, Action::AddLineComment);
 
     assert!(app.comment_reply.is_none());
+}
+
+/// What follows the diff lines, in order: forge thread rows and local comments.
+fn notes_order(app: &App) -> Vec<&'static str> {
+    let mut order: Vec<&'static str> = Vec::new();
+    for line in &app.line_annotations {
+        let note = match line {
+            AnnotatedLine::RemoteThreadLine { .. } => "thread",
+            AnnotatedLine::LineComment { .. } => "local",
+            _ => continue,
+        };
+        if order.last() != Some(&note) {
+            order.push(note);
+        }
+    }
+    order
+}
+
+#[test]
+fn should_put_forge_threads_before_local_comments() {
+    for mode in [DiffViewMode::Unified, DiffViewMode::SideBySide] {
+        let mut app = app_with_threads(vec![thread("T1", Some(2))]);
+        reply(&mut app, "Because of X");
+        app.diff_view_mode = mode;
+
+        app.rebuild_annotations();
+
+        assert_eq!(notes_order(&app), ["thread", "local"], "{mode:?}");
+    }
+}
+
+#[test]
+fn should_keep_local_comments_first_with_extended_comments_off() {
+    for mode in [DiffViewMode::Unified, DiffViewMode::SideBySide] {
+        let mut app = app_with_threads(vec![thread("T1", Some(2))]);
+        reply(&mut app, "Because of X");
+        app.forge_config.extended_comments = false;
+        app.diff_view_mode = mode;
+
+        app.rebuild_annotations();
+
+        assert_eq!(notes_order(&app), ["local", "thread"], "{mode:?}");
+    }
 }
