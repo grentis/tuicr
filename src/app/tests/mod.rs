@@ -13,6 +13,7 @@ mod find_source_line_tests;
 mod locked_comment_tests;
 mod mention_tests;
 mod persistence_merge_tests;
+mod pr_comment_tests;
 mod pr_info_tests;
 pub(in crate::app) mod render_perf_tests;
 mod sbs_comment_side_tests;
