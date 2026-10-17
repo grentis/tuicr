@@ -2557,6 +2557,52 @@ Match host github-work
         }
     }
 
+    const ISSUE_COMMENT_RESPONSE_JSON: &str = r##"{
+        "id": 987,
+        "body": "/retest",
+        "html_url": "https://github.com/agavra/tuicr/pull/125#issuecomment-987",
+        "user": { "login": "octocat" },
+        "created_at": "2026-10-09T10:00:00Z"
+    }"##;
+
+    #[test]
+    fn should_post_pull_request_comment_to_issue_comments_endpoint() {
+        // given
+        let runner = FakeGhRunner::default();
+        *runner.stdin_response.borrow_mut() = Some(ISSUE_COMMENT_RESPONSE_JSON.to_string());
+        let backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+
+        // when
+        let comment = backend
+            .create_pull_request_comment(&details, "/retest")
+            .unwrap();
+
+        // then — the stored comment is what the conversation section renders
+        assert_eq!(comment.body, "/retest");
+        assert_eq!(comment.author.as_deref(), Some("octocat"));
+        assert!(comment.url.unwrap().ends_with("#issuecomment-987"));
+        assert!(comment.created_at.is_some());
+
+        // and — it is a conversation comment, not a review
+        let stdin_calls = backend.runner.stdin_calls.borrow();
+        assert_eq!(stdin_calls.len(), 1);
+        let (args, stdin) = &stdin_calls[0];
+        assert_eq!(args[1], "repos/agavra/tuicr/issues/125/comments");
+        assert!(args.iter().any(|a| a == "POST"));
+
+        // and — the body goes out exactly as typed, with nothing else
+        let payload: serde_json::Value = serde_json::from_str(stdin).unwrap();
+        assert_eq!(payload, serde_json::json!({ "body": "/retest" }));
+    }
+
+    #[test]
+    fn should_reject_issue_comment_response_without_body() {
+        assert!(parse_issue_comment_response(r#"{"id": 1}"#).is_err());
+    }
+
     #[test]
     fn should_post_create_review_to_reviews_endpoint_with_stdin_payload() {
         // given
