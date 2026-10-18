@@ -459,6 +459,46 @@ mod tests {
     use crate::vcs::git::{GitCliBackend, Libgit2Backend};
     use crate::vcs::traits::VcsBackend;
 
+    #[test]
+    fn should_see_a_commit_made_outside_an_open_repository_handle() {
+        // given: a staged change, read through a long-lived handle
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = Repository::init(dir.path()).expect("init");
+        create_initial_commit(&repo, "a.rs", "one\n");
+        fs::write(dir.path().join("a.rs"), "two\n").expect("write");
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .current_dir(dir.path())
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .status()
+                .expect("git");
+            assert!(status.success());
+        };
+        git(&["add", "a.rs"]);
+        assert_eq!(
+            list_changed_paths(&repo, ChangeKind::Staged).unwrap(),
+            [PathBuf::from("a.rs")]
+        );
+
+        // when: another process commits it
+        git(&["commit", "-qm", "two"]);
+
+        // then: the same handle sees nothing staged
+        assert!(
+            list_changed_paths(&repo, ChangeKind::Staged)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     fn create_initial_commit(repo: &Repository, file_name: &str, content: &str) {
         fs::write(repo.workdir().unwrap().join(file_name), content)
             .expect("failed to write initial file");
