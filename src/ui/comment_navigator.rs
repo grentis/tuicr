@@ -83,10 +83,15 @@ fn render_comment_row(app: &App, item: &CommentNavigatorItem) -> Line<'static> {
     let dim_style = styles::dim_style(&app.theme);
     let location = comment_location(item);
 
-    let author_accent = item
-        .author
-        .as_deref()
-        .and_then(|author| styles::author_accent(&app.username, author));
+    // With `list_comment_replies` every row is coloured by its author, yours
+    // included; otherwise only other people's are.
+    let author_accent = item.author.as_deref().and_then(|author| {
+        if app.list_comment_replies {
+            Some(styles::author_color_for(author))
+        } else {
+            styles::author_accent(&app.username, author)
+        }
+    });
 
     // Comments of a collapsed reviewed file are listed dimmed, like the file.
     let marker_style = if app.comment_navigator_item_collapsed_file(item).is_some() {
@@ -110,8 +115,8 @@ fn render_comment_row(app: &App, item: &CommentNavigatorItem) -> Line<'static> {
             "● ".to_string(),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ));
-        // With `list_comment_replies`, someone else's comment leads with its
-        // author; a reply row already shows it.
+        // With `list_comment_replies`, a comment leads with its author; a
+        // reply row already shows it.
         if app.list_comment_replies
             && !item.reply
             && let Some(author) = item.author.as_deref()
