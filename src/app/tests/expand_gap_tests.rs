@@ -2629,3 +2629,47 @@ fn should_export_every_comment_without_extended_comments() {
 
     assert_eq!(exported_texts(&app).len(), 6);
 }
+
+#[test]
+fn should_draw_a_thread_as_one_box_with_the_threads_comment_style() {
+    let (mut app, id) = app_with_a_file_comment(true);
+    app.comment_threads = true;
+    app.session.add_reply(&id, claude("Done")).unwrap();
+    app.rebuild_annotations();
+
+    let comments = &app.session.files[&PathBuf::from("a.rs")].file_comments;
+    // the reply is a divider naming its author, closing the thread
+    assert_eq!(app.reply_label(&comments[1]), None);
+    assert_eq!(
+        app.thread_chrome(&comments[1]),
+        crate::ui::comment_panel::ThreadChrome {
+            threads: true,
+            reply_author: Some("Claude".to_string()),
+            continues: false,
+        }
+    );
+    // the first comment leaves its closing rule to the reply
+    assert!(app.thread_chrome(&comments[0]).continues);
+    // every box names its author, yours included
+    assert_eq!(app.comment_box_author(&comments[0]), Some("user"));
+}
+
+#[test]
+fn should_draw_each_local_comment_as_its_own_box_by_default() {
+    let (mut app, id) = app_with_a_file_comment(true);
+    app.session.add_reply(&id, claude("Done")).unwrap();
+    app.rebuild_annotations();
+
+    let comments = &app.session.files[&PathBuf::from("a.rs")].file_comments;
+    // no thread chrome: a header and a closing rule each, as upstream
+    for comment in comments {
+        assert_eq!(
+            app.thread_chrome(comment),
+            crate::ui::comment_panel::ThreadChrome::default()
+        );
+        assert!(!comment.continues_thread.0);
+    }
+    // your own comment names no author; someone else's does
+    assert_eq!(app.comment_box_author(&comments[0]), None);
+    assert_eq!(app.comment_box_author(&comments[1]), Some("Claude"));
+}

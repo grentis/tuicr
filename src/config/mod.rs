@@ -2087,6 +2087,20 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_comment_style() {
+        let outcome = parse_config("comment_style = \"threads\"\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.comment_style).as_deref(),
+            Some("threads")
+        );
+        assert!(outcome.warnings.is_empty());
+
+        let outcome = parse_config("comment_style = \"bubbles\"\n");
+        assert_eq!(outcome.config.and_then(|cfg| cfg.comment_style), None);
+        assert_eq!(outcome.warnings.len(), 1);
+    }
+
+    #[test]
     fn should_parse_jump_to_next_unreviewed() {
         let outcome = parse_config("jump_to_next_unreviewed = true\n");
         assert_eq!(

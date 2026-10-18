@@ -1348,4 +1348,59 @@ mod tests {
 
         assert!(header.contains("[github @alice]"));
     }
+
+    fn rendered_box(thread: ThreadChrome, line_range: Option<LineRange>) -> Vec<String> {
+        format_comment_lines(
+            &test_theme(),
+            CommentTypePresentation {
+                label: "NOTE".to_string(),
+                color: Color::Blue,
+            },
+            "done",
+            line_range,
+            40,
+            Some("Claude"),
+            None,
+            thread,
+        )
+        .iter()
+        .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
+        .collect()
+    }
+
+    #[test]
+    fn should_draw_a_local_reply_as_a_divider_inside_its_thread() {
+        let mid = rendered_box(
+            ThreadChrome {
+                threads: true,
+                reply_author: Some("Claude".to_string()),
+                continues: true,
+            },
+            Some(LineRange::single(3)),
+        );
+
+        assert!(mid[0].starts_with("    \u{251c}\u{2500}\u{2500} \u{21b3} @Claude "));
+        // a reply follows: no closing rule of its own
+        assert_eq!(mid.len(), 2);
+    }
+
+    #[test]
+    fn should_draw_a_local_comment_as_upstream_does_without_threads() {
+        let plain = rendered_box(ThreadChrome::default(), Some(LineRange::single(3)));
+
+        // the tee the marker line joins, the author in the badge, closed
+        assert!(plain[0].starts_with("    \u{251c}\u{2500}\u{2500} [NOTE @Claude] L3 "));
+        assert!(plain.last().unwrap().starts_with("    \u{2570}"));
+        assert_eq!(plain.len(), 3);
+
+        let thread = rendered_box(
+            ThreadChrome {
+                threads: true,
+                ..ThreadChrome::default()
+            },
+            Some(LineRange::single(3)),
+        );
+        // with threads, no marker line: the box opens with a corner
+        assert!(thread[0].starts_with("    \u{256d}\u{2500}\u{2500} [NOTE @Claude] L3 "));
+    }
 }
