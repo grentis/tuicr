@@ -2262,6 +2262,16 @@ mod tests {
     // forge
 
     #[test]
+    fn should_parse_keep_reviewed_on_quit() {
+        let outcome = parse_config("keep_reviewed_on_quit = true\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.keep_reviewed_on_quit),
+            Some(true)
+        );
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
     fn should_default_forge_to_none_when_section_missing() {
         let outcome = parse_config("");
         assert_eq!(
