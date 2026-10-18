@@ -564,7 +564,9 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 "  c         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            Span::raw("Add line comment (on a GitHub thread: reply to it)"),
+            Span::raw(
+                "Add line comment (on a GitHub thread, or a local comment in a local review: reply to it)",
+            ),
         ]),
         Line::from(vec![
             Span::styled(
@@ -599,7 +601,7 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 "  dd        ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            Span::raw("Delete comment at cursor"),
+            Span::raw("Delete comment at cursor (with its replies)"),
         ]),
         Line::from(vec![
             Span::styled(

@@ -68,6 +68,37 @@ impl FileReview {
         self.line_comments.entry(line).or_default().push(comment);
     }
 
+    /// Answer the local comment `parent_id` with `reply`. The reply joins
+    /// the thread of the comment it answers, so replying to a reply answers
+    /// its thread: it is stored after the thread's last message, on the
+    /// same line and side. Returns the stored reply, or `None` when this
+    /// file has no comment `parent_id`.
+    pub fn add_reply(&mut self, parent_id: &str, reply: Comment) -> Option<Comment> {
+        let comments = std::iter::once(&mut self.file_comments)
+            .chain(self.line_comments.values_mut())
+            .find(|comments| comments.iter().any(|c| c.id == parent_id))?;
+        reply_in(comments, parent_id, reply)
+    }
+
+    /// Put every reply right after the thread it belongs to, in every list
+    /// of this file. A merge from another process appends at the end, which
+    /// can land a reply after a later thread on the same line.
+    pub fn order_threads(&mut self) {
+        order_threads(&mut self.file_comments);
+        self.line_comments.values_mut().for_each(order_threads);
+    }
+
+    /// Remove a thread's replies once its first comment is gone.
+    pub fn drop_replies_to(&mut self, root_id: &str) {
+        let answers = |c: &Comment| c.reply_to.as_deref() == Some(root_id);
+        self.file_comments.retain(|c| !answers(c));
+        for comments in self.line_comments.values_mut() {
+            comments.retain(|c| !answers(c));
+        }
+        self.line_comments
+            .retain(|_, comments| !comments.is_empty());
+    }
+
     pub fn toggle_hunk_reviewed(&mut self, key: String) -> bool {
         if self.reviewed_hunks.contains(&key) {
             self.reviewed_hunks.remove(&key);
@@ -280,6 +311,19 @@ impl ReviewSession {
         false
     }
 
+    /// The comment at `location`, if there is one.
+    pub(crate) fn comment_at(&self, location: &CommentLocation) -> Option<&Comment> {
+        match location {
+            CommentLocation::Review { index } => self.review_comments.get(*index),
+            CommentLocation::File { path, index } => {
+                self.files.get(path)?.file_comments.get(*index)
+            }
+            CommentLocation::Line {
+                path, line, index, ..
+            } => self.files.get(path)?.line_comments.get(line)?.get(*index),
+        }
+    }
+
     pub(crate) fn find_comment_by_id(&self, comment_id: &str) -> Option<CommentLocation> {
         for (index, comment) in self.review_comments.iter().enumerate() {
             if comment.id == comment_id {
@@ -309,6 +353,81 @@ impl ReviewSession {
             }
         }
         None
+    }
+
+    /// Answer the local comment `parent_id`, wherever it is. Returns the
+    /// file it is on (`None` for a review-level comment) and the stored
+    /// reply, or `None` when the session has no such comment.
+    pub fn add_reply(
+        &mut self,
+        parent_id: &str,
+        reply: Comment,
+    ) -> Option<(Option<PathBuf>, Comment)> {
+        if self.review_comments.iter().any(|c| c.id == parent_id) {
+            let stored = reply_in(&mut self.review_comments, parent_id, reply)?;
+            self.updated_at = Utc::now();
+            return Some((None, stored));
+        }
+        self.files.iter_mut().find_map(|(path, review)| {
+            let has_parent = review
+                .file_comments
+                .iter()
+                .chain(review.line_comments.values().flatten())
+                .any(|c| c.id == parent_id);
+            if !has_parent {
+                return None;
+            }
+            let stored = review.add_reply(parent_id, reply.clone())?;
+            self.updated_at = Utc::now();
+            Some((Some(path.clone()), stored))
+        })
+    }
+
+    /// The local comment `id`, wherever it is.
+    pub fn comment_mut(&mut self, id: &str) -> Option<&mut Comment> {
+        let files = self.files.values_mut().flat_map(|review| {
+            review
+                .file_comments
+                .iter_mut()
+                .chain(review.line_comments.values_mut().flatten())
+        });
+        self.review_comments
+            .iter_mut()
+            .chain(files)
+            .find(|c| c.id == id)
+    }
+
+    /// Remove the local comment `id`, wherever it is. Returns whether it was
+    /// there.
+    pub fn remove_comment_by_id(&mut self, id: &str) -> bool {
+        let before = self.comment_count();
+        self.review_comments.retain(|c| c.id != id);
+        for review in self.files.values_mut() {
+            review.file_comments.retain(|c| c.id != id);
+            for comments in review.line_comments.values_mut() {
+                comments.retain(|c| c.id != id);
+            }
+            review
+                .line_comments
+                .retain(|_, comments| !comments.is_empty());
+        }
+        self.comment_count() < before
+    }
+
+    /// Remove a thread's replies once its first comment is gone, wherever it
+    /// was.
+    pub fn drop_replies_to(&mut self, root_id: &str) {
+        self.review_comments
+            .retain(|c| c.reply_to.as_deref() != Some(root_id));
+        for review in self.files.values_mut() {
+            review.drop_replies_to(root_id);
+        }
+    }
+
+    /// Put every reply right after its thread, review-level and per file.
+    pub fn order_threads(&mut self) {
+        order_threads(&mut self.review_comments);
+        self.files.values_mut().for_each(FileReview::order_threads);
     }
 
     pub fn has_comments(&self) -> bool {
@@ -352,6 +471,54 @@ impl ReviewSession {
             .get(path)
             .is_some_and(|review| review.reviewed_hunks.contains(key))
     }
+}
+
+/// Store `reply` in the thread of `parent_id` within `comments`: after the
+/// thread's last message, on the thread's side and lines.
+fn reply_in(comments: &mut Vec<Comment>, parent_id: &str, mut reply: Comment) -> Option<Comment> {
+    let parent = comments.iter().find(|c| c.id == parent_id)?;
+    let root_id = parent.reply_to.clone().unwrap_or_else(|| parent.id.clone());
+    let root = comments.iter().find(|c| c.id == root_id).unwrap_or(parent);
+    reply.reply_to = Some(root_id.clone());
+    reply.side = root.side;
+    reply.line_range = root.line_range;
+    reply.commit_id = root.commit_id.clone();
+    let stored = reply.clone();
+    comments.push(reply);
+    order_threads(comments);
+    Some(stored)
+}
+
+/// Sort `comments` so each reply sits right after its thread's earlier
+/// messages, keeping everything else in place. A reply whose thread is not
+/// in the list stays where it is.
+fn order_threads(comments: &mut Vec<Comment>) {
+    let position: HashMap<&str, usize> = comments
+        .iter()
+        .enumerate()
+        .map(|(idx, comment)| (comment.id.as_str(), idx))
+        .collect();
+    // A thread's first comment leads it even when stored after its replies,
+    // as a reload merging in a whole new thread can leave them.
+    let mut keyed: Vec<(usize, bool, usize)> = comments
+        .iter()
+        .enumerate()
+        .map(|(idx, comment)| {
+            let thread = comment
+                .reply_to
+                .as_deref()
+                .and_then(|root| position.get(root).copied())
+                .unwrap_or(idx);
+            (thread, comment.reply_to.is_some(), idx)
+        })
+        .collect();
+    keyed.sort();
+    let mut taken: Vec<Option<Comment>> = std::mem::take(comments).into_iter().map(Some).collect();
+    comments.extend(
+        keyed
+            .into_iter()
+            .filter_map(|(_, _, idx)| taken[idx].take()),
+    );
 }
 
 #[cfg(test)]

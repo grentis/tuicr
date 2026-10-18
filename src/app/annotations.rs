@@ -63,6 +63,10 @@ impl App {
 
         self.line_annotations.clear();
         self.colored_hunks.clear();
+        // Replies follow their thread.
+        if self.forge_config.extended_comments {
+            self.session.order_threads();
+        }
 
         // Pre-index remote threads by (path, line, side) for quick lookup
         // during the file/hunk walk. Threads whose visibility is
