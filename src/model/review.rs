@@ -424,6 +424,20 @@ impl ReviewSession {
         }
     }
 
+    /// Forget which comments a reply follows, so every comment draws its own
+    /// closed box: how comments look without `extended_comments`.
+    pub fn clear_thread_continuations(&mut self) {
+        let files = self.files.values_mut().flat_map(|review| {
+            review
+                .file_comments
+                .iter_mut()
+                .chain(review.line_comments.values_mut().flatten())
+        });
+        for comment in self.review_comments.iter_mut().chain(files) {
+            comment.continues_thread.0 = false;
+        }
+    }
+
     /// Put every reply right after its thread, review-level and per file.
     pub fn order_threads(&mut self) {
         order_threads(&mut self.review_comments);
@@ -519,6 +533,15 @@ fn order_threads(comments: &mut Vec<Comment>) {
             .into_iter()
             .filter_map(|(_, _, idx)| taken[idx].take()),
     );
+
+    let thread = |c: &Comment| c.reply_to.clone().unwrap_or_else(|| c.id.clone());
+    for idx in 0..comments.len() {
+        let continues = comments
+            .get(idx + 1)
+            .and_then(|next| next.reply_to.as_ref())
+            .is_some_and(|root| *root == thread(&comments[idx]));
+        comments[idx].continues_thread.0 = continues;
+    }
 }
 
 #[cfg(test)]
