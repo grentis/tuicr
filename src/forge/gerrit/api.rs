@@ -27,6 +27,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Map, Value, json};
 
 use crate::error::{Result, TuicrError};
+use crate::forge::local_git::{has_object, run_local_git};
 use crate::forge::remote_comments::RemoteReviewThread;
 use crate::forge::submit::{GhSide, InlineComment, SubmitEvent};
 use crate::forge::traits::{
@@ -819,14 +820,14 @@ fn sha_present(root: &Path, sha: &str) -> bool {
         return false;
     }
     let spec = format!("{sha}^{{commit}}");
-    run_command_output("git", Some(root), ["cat-file", "-e", spec.as_str()]).is_ok()
+    has_object(root, &spec)
 }
 
 /// Read a git blob via `git show <sha>:<path>`. `None` on any failure so
 /// callers fall back to the REST API.
 fn read_blob(root: &Path, sha: &str, path: &Path) -> Option<String> {
     let spec = format!("{}:{}", sha, path.to_string_lossy());
-    run_command_output("git", Some(root), ["show", spec.as_str()]).ok()
+    run_local_git(root, &["show", &spec])
 }
 
 /// Name of the remote in `root` that points at `repo`, preferring `origin`.

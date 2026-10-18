@@ -27,7 +27,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use crate::error::{Result, TuicrError};
-use crate::forge::local_git::read_blob;
+use crate::forge::local_git::{has_object, read_blob};
 use crate::forge::remote_comments::{
     RemoteCommentSide, RemoteReviewComment, RemoteReviewState, RemoteReviewSummary,
     RemoteReviewThread,
@@ -1476,13 +1476,8 @@ fn parse_diff_git_line(line: &str) -> Option<(String, String)> {
 
 /// `Some(diff)` when both SHAs are present locally.
 fn local_range_diff(repo_root: &Path, start_sha: &str, end_sha: &str) -> Option<Vec<FilePatch>> {
-    for sha in [start_sha, end_sha] {
-        run_command_output(
-            "git",
-            Some(repo_root),
-            ["cat-file", "-e", sha].iter().map(|s| OsStr::new(*s)),
-        )
-        .ok()?;
+    if !has_object(repo_root, start_sha) || !has_object(repo_root, end_sha) {
+        return None;
     }
     run_git_diff(repo_root, &[format!("{start_sha}..{end_sha}").as_str()]).ok()
 }

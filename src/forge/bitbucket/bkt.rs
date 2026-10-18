@@ -18,7 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Result, TuicrError};
-use crate::forge::local_git::read_blob;
+use crate::forge::local_git::{has_object, read_blob};
 use crate::forge::local_merge_base;
 use crate::forge::remote_comments::{RemoteReviewSummary, RemoteReviewThread};
 use crate::forge::submit::{GhSide, SubmitEvent};
@@ -90,15 +90,8 @@ impl From<CommandOutputError> for BktCommandError {
 
 /// Return `Some(diff)` when both SHAs exist locally, via `git diff <start>..<end>`.
 fn local_range_diff(repo_root: &Path, start_sha: &str, end_sha: &str) -> Option<Vec<FilePatch>> {
-    for sha in [start_sha, end_sha] {
-        let exists = run_command_output(
-            "git",
-            Some(repo_root),
-            ["cat-file", "-e", sha].iter().map(|s| OsStr::new(*s)),
-        );
-        if exists.is_err() {
-            return None;
-        }
+    if !has_object(repo_root, start_sha) || !has_object(repo_root, end_sha) {
+        return None;
     }
     let range = format!("{start_sha}..{end_sha}");
     run_git_diff(repo_root, &[range.as_str()]).ok()
