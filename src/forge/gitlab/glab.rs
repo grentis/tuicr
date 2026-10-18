@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use sha1::{Digest, Sha1};
 
 use crate::error::{Result, TuicrError};
-use crate::forge::local_git::read_blob;
+use crate::forge::local_git::{has_object, read_blob};
 use crate::forge::remote_comments::RemoteReviewThread;
 use crate::forge::traits::{
     ForgeBackend, ForgeFileLinesRequest, ForgeRepository, GhCreateReviewResponse,
@@ -85,15 +85,8 @@ impl From<CommandOutputError> for GlabCommandError {
 
 /// Return `Some(diff)` when both SHAs exist locally, via `git diff <start>..<end>`.
 fn local_range_diff(repo_root: &Path, start_sha: &str, end_sha: &str) -> Option<Vec<FilePatch>> {
-    for sha in [start_sha, end_sha] {
-        let exists = run_command_output(
-            "git",
-            Some(repo_root),
-            ["cat-file", "-e", sha].iter().map(|s| OsStr::new(*s)),
-        );
-        if exists.is_err() {
-            return None;
-        }
+    if !has_object(repo_root, start_sha) || !has_object(repo_root, end_sha) {
+        return None;
     }
     let range = format!("{start_sha}..{end_sha}");
     run_git_diff(repo_root, &[range.as_str()]).ok()

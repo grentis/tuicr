@@ -28,9 +28,14 @@ pub(crate) fn parse_raw_patch_output(output: &[u8]) -> Result<Vec<FilePatch>> {
 }
 
 /// Run Git with the structured diff flags used by non-CLI-backend callers.
+///
+/// These callers are the forges, which fall back to their API, so a missing
+/// object fails the diff instead of being downloaded from a partial clone's
+/// promisor remote (`GIT_NO_LAZY_FETCH`).
 pub(crate) fn run_git_diff(root: &Path, diff_args: &[&str]) -> Result<Vec<FilePatch>> {
     let output = Command::new("git")
         .current_dir(root)
+        .env("GIT_NO_LAZY_FETCH", "1")
         .args([
             "diff",
             "--no-ext-diff",

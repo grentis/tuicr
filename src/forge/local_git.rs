@@ -5,10 +5,32 @@
 //! the same read to open the reviewed revision. One copy lives here so those
 //! callers cannot drift apart.
 
-use std::ffi::OsStr;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
-use crate::process::run_command_output;
+/// Run `git` in the checkout at `repo_root` and return its stdout, or `None`
+/// when it fails. A missing object fails it too: in a partial clone, git would
+/// otherwise download it from the promisor remote, one object at a time, which
+/// on a large repository stalls for minutes. Every caller falls back to the
+/// forge.
+pub(crate) fn run_local_git(repo_root: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .current_dir(repo_root)
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Whether the object `spec` names is in the checkout, without downloading it.
+pub(crate) fn has_object(repo_root: &Path, spec: &str) -> bool {
+    run_local_git(repo_root, &["cat-file", "-e", spec]).is_some()
+}
 
 /// Read a git blob from the checkout at `repo_root` using
 /// `git show <sha>:<path>`.
@@ -21,28 +43,17 @@ pub(crate) fn read_blob(repo_root: &Path, sha: &str, path: &Path) -> Option<Stri
     // Diff paths arrive with forward slashes, but a path joined on Windows can
     // carry backslashes, and git only resolves `<sha>:<path>` with slashes.
     let spec = format!("{}:{}", sha, path.to_string_lossy().replace('\\', "/"));
-    let exists = run_command_output(
-        "git",
-        Some(repo_root),
-        ["cat-file", "-e", spec.as_str()]
-            .iter()
-            .map(|s| OsStr::new(*s)),
-    );
-    if exists.is_err() {
+    if !has_object(repo_root, &spec) {
         return None;
     }
-    run_command_output(
-        "git",
-        Some(repo_root),
-        ["show", spec.as_str()].iter().map(|s| OsStr::new(*s)),
-    )
-    .ok()
+    run_local_git(repo_root, &["show", &spec])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::process::run_command_output;
+    use std::ffi::OsStr;
     use std::path::PathBuf;
 
     fn git(dir: &Path, args: &[&str]) {
@@ -82,4 +93,5 @@ mod tests {
             None
         );
     }
+
 }

@@ -23,7 +23,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::json;
 
 use crate::error::{Result, TuicrError};
-use crate::forge::local_git::read_blob;
+use crate::forge::local_git::{has_object, read_blob};
 use crate::forge::local_merge_base;
 use crate::forge::remote_comments::RemoteReviewThread;
 use crate::forge::submit::{GhSide, SubmitEvent};
@@ -243,15 +243,8 @@ fn default_transport() -> Box<dyn AzHttp> {
 /// `git diff <a><sep><b>` in `repo_root`, returning `None` when either SHA is
 /// absent locally or the command fails.
 fn local_diff(repo_root: &Path, a: &str, b: &str, sep: &str) -> Option<Vec<FilePatch>> {
-    for sha in [a, b] {
-        let exists = run_command_output(
-            "git",
-            Some(repo_root),
-            ["cat-file", "-e", sha].iter().map(|s| OsStr::new(*s)),
-        );
-        if exists.is_err() {
-            return None;
-        }
+    if !has_object(repo_root, a) || !has_object(repo_root, b) {
+        return None;
     }
     let range = format!("{a}{sep}{b}");
     run_git_diff(repo_root, &[range.as_str()]).ok()
