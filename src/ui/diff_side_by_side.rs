@@ -508,6 +508,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                 app.comment_cursor,
                 None,
                 app.comment_input_action(true),
+                app.comment_threads,
                 ctx.panel_width.saturating_sub(1),
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -542,8 +543,9 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                 &comment.content,
                 None,
                 ctx.panel_width.saturating_sub(1),
-                (comment.author != app.username).then_some(comment.author.as_str()),
+                app.comment_box_author(comment),
                 app.reply_label(comment),
+                app.thread_chrome(comment),
             );
             for mut comment_line in comment_lines {
                 let indicator = cursor_indicator(line_idx, ctx.current_line_idx);
@@ -575,6 +577,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                     thread,
                     muted,
                     app.forge_kind(),
+                    app.comment_threads,
                 );
                 for mut comment_line in thread_lines {
                     let indicator = cursor_indicator(line_idx, ctx.current_line_idx);
@@ -597,6 +600,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
             app.comment_cursor,
             None,
             app.comment_input_action(false),
+            app.comment_threads,
             ctx.panel_width.saturating_sub(1),
             app.comment_vim_mode_label()
                 .as_ref()
@@ -698,6 +702,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                         app.comment_cursor,
                         None,
                         app.comment_input_action(true),
+                        app.comment_threads,
                         ctx.panel_width.saturating_sub(1),
                         app.comment_vim_mode_label()
                             .as_ref()
@@ -736,8 +741,9 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                         &comment.content,
                         None,
                         ctx.panel_width.saturating_sub(1),
-                        (comment.author != app.username).then_some(comment.author.as_str()),
+                        app.comment_box_author(comment),
                         app.reply_label(comment),
+                        app.thread_chrome(comment),
                     );
                     for mut comment_line in comment_lines {
                         let indicator = cursor_indicator(line_idx, ctx.current_line_idx);
@@ -764,6 +770,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                 app.comment_cursor,
                 None,
                 app.comment_input_action(false),
+                app.comment_threads,
                 ctx.panel_width.saturating_sub(1),
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -1211,7 +1218,10 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
 
     // Comment-box overlays painted last so the box + bar always win on their
     // single cells.
-    crate::ui::diff_view::paint_comment_box_bar(frame, &overlay_ctx);
+    // Threads draw no bar from a box up to its line.
+    if !app.comment_threads {
+        crate::ui::diff_view::paint_comment_box_bar(frame, &overlay_ctx);
+    }
     crate::ui::diff_view::paint_comment_box_right_border(frame, &overlay_ctx);
 
     // Calculate screen position for comment cursor if in Comment mode
@@ -2023,6 +2033,7 @@ fn add_remote_threads_to_line(
             thread,
             muted,
             ctx.app.forge_kind(),
+            ctx.app.comment_threads,
         );
         let box_top_row = line_idx;
         for mut comment_line in thread_lines {
@@ -2081,6 +2092,7 @@ fn add_comments_to_line(
                         ctx.comment_cursor,
                         line_range,
                         ctx.app.comment_input_action(true),
+                        ctx.app.comment_threads,
                         ctx.panel_width.saturating_sub(1),
                         ctx.app
                             .comment_vim_mode_label()
@@ -2133,8 +2145,9 @@ fn add_comments_to_line(
                             &comment.content,
                             line_range,
                             ctx.panel_width.saturating_sub(1),
-                            (comment.author != ctx.app.username).then_some(comment.author.as_str()),
+                            ctx.app.comment_box_author(comment),
                             ctx.app.reply_label(comment),
+                            ctx.app.thread_chrome(comment),
                         );
                         for mut comment_line in comment_lines {
                             let indicator = cursor_indicator(line_idx, ctx.current_line_idx);
@@ -2171,6 +2184,7 @@ fn add_comments_to_line(
             ctx.comment_cursor,
             line_range,
             ctx.app.comment_input_action(false),
+            ctx.app.comment_threads,
             ctx.panel_width.saturating_sub(1),
             ctx.app
                 .comment_vim_mode_label()

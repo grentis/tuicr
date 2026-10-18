@@ -329,6 +329,15 @@ fn main() -> anyhow::Result<()> {
         .as_ref()
         .and_then(|cfg| cfg.jump_to_next_unreviewed)
         .unwrap_or(false);
+    app.comment_threads = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.comment_style.as_deref())
+        == Some("threads");
+    if app.comment_threads {
+        // The diff was laid out before the style was known.
+        app.rebuild_annotations();
+    }
     app.commit_selection_start = commit_selection;
     app.pending_start_line = cli_args.start_line;
 

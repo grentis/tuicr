@@ -57,6 +57,7 @@ click_toggles_folders = true
 list_reviewed_file_comments = false
 list_comment_replies = false
 jump_to_next_unreviewed = false
+comment_style = "boxes"
 diff_watch_interval_ms = 0
 
 backend = "libgit2"
@@ -131,6 +132,7 @@ session_header = true
 | `list_reviewed_file_comments` | `false`      | List the comments and threads of files marked reviewed in the comment navigator too. Reviewed files collapse to their header in the diff, and by default their comments leave the list with them. With `true` they stay listed, dimmed, and `Enter` opens the file at the comment without unmarking it. |
 | `list_comment_replies`     | `false`      | List each reply of a forge thread in the comment navigator, indented under the thread as `↳ @author`, and set local replies to a thread apart the same way. Every comment and thread, yours included, is listed with its author ahead of the location (`@alice src/lib.rs:12`). `Enter` on a reply moves to it inside the thread. `false` lists a thread as one entry. |
 | `jump_to_next_unreviewed`  | `false`      | After `r` marks a file reviewed in the diff, move the cursor to the next file not yet reviewed, as `}` would, wrapping round to the first. The status bar names the file marked, and `Ctrl-o` goes back to it. When it was the last one, the cursor stays and the status bar says so. Unmarking never moves. `false` keeps the cursor on the file just marked. |
+| `comment_style`            | `boxes`      | How comments are drawn in the diff. `boxes`: each comment in its own box, with a marker line up to the line it is on. `threads`: as forge threads are drawn, one box per thread with each reply as an `↳ @author` divider, every box in one colour with its author in the header, and no marker line, for local and forge comments alike. |
 | `backend`                  | `libgit2`    | Git backend: `libgit2` or `cli`. Sparse-checkout repos auto-route to `cli`.                                                                                |
 | `comment_types`            | (none)       | Comment categories. Untyped by default. See [Comment types](#comment-types).                                                                               |
 | `export_legend`            | `true`       | Include the `Comment types:` legend in the exported review. Superseded by `legend` under [Export](#export).                                                |
@@ -313,7 +315,7 @@ comment_type_prefix = false
 | --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `comment_type_prefix` | `true`  | Prepend `[TYPE] ` to comment bodies on submit (e.g. `[ISSUE] Magic number should be a constant`). The tag uses the type's `label`, uppercased — the same text the TUI badge and export show. Set to `false` to send the raw comment body without a classification tag. |
 | `sync_viewed`         | `false` | Keep `r` (toggle file reviewed) and GitHub's per-file **Viewed** checkbox in step while reviewing a pull request, in both directions. GitHub only; see [Viewed state](#viewed-state). |
-| `extended_comments`   | `false` | Extra comment features: typing `@` in a comment suggests people to mention (see [Mentioning people](KEYBINDINGS.md#mentioning-people)), and `<leader>C` posts a comment to the PR conversation. Local reviews get threads: `c` on a local comment replies to it (each reply in its own box, labelled with whom it answers). `dd` on a thread's first comment deletes its replies too and saves at once, `y` leaves out threads someone else answered last, and an unset `username` falls back to git's `user.name`. |
+| `extended_comments`   | `false` | Extra comment features: typing `@` in a comment suggests people to mention (see [Mentioning people](KEYBINDINGS.md#mentioning-people)), and `<leader>C` posts a comment to the PR conversation. Local reviews get threads: `c` on a local comment replies to it (each reply in its own box, labelled with whom it answers; see `comment_style` to draw a thread as one box). `dd` on a thread's first comment deletes its replies too and saves at once, `y` leaves out threads someone else answered last, and an unset `username` falls back to git's `user.name`. |
 
 When enabled (the default), submitted comments look like:
 

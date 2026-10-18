@@ -163,6 +163,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 app.comment_cursor,
                 None,
                 app.comment_input_action(true),
+                app.comment_threads,
                 comment_width,
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -198,8 +199,9 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 &comment.content,
                 None,
                 comment_width,
-                (comment.author != app.username).then_some(comment.author.as_str()),
+                app.comment_box_author(comment),
                 app.reply_label(comment),
+                app.thread_chrome(comment),
             );
             for mut comment_line in comment_lines {
                 let indicator = cursor_indicator(line_idx, current_line_idx);
@@ -231,6 +233,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                     thread,
                     muted,
                     app.forge_kind(),
+                    app.comment_threads,
                 );
                 for mut comment_line in thread_lines {
                     let indicator = cursor_indicator(line_idx, current_line_idx);
@@ -253,6 +256,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
             app.comment_cursor,
             None,
             app.comment_input_action(false),
+            app.comment_threads,
             comment_width,
             app.comment_vim_mode_label()
                 .as_ref()
@@ -360,6 +364,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                         app.comment_cursor,
                         None,
                         app.comment_input_action(true),
+                        app.comment_threads,
                         comment_width,
                         app.comment_vim_mode_label()
                             .as_ref()
@@ -401,8 +406,9 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                         &comment.content,
                         None,
                         comment_width,
-                        (comment.author != app.username).then_some(comment.author.as_str()),
+                        app.comment_box_author(comment),
                         app.reply_label(comment),
+                        app.thread_chrome(comment),
                     );
                     for mut comment_line in comment_lines {
                         let indicator = cursor_indicator(line_idx, current_line_idx);
@@ -429,6 +435,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 app.comment_cursor,
                 None,
                 app.comment_input_action(false),
+                app.comment_threads,
                 comment_width,
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -757,6 +764,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 app.comment_cursor,
                                                 line_range,
                                                 app.comment_input_action(true),
+                                                app.comment_threads,
                                                 comment_width,
                                                 app.comment_vim_mode_label()
                                                     .as_ref()
@@ -829,9 +837,9 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 &comment.content,
                                                 line_range,
                                                 comment_width,
-                                                (comment.author != app.username)
-                                                    .then_some(comment.author.as_str()),
+                                                app.comment_box_author(comment),
                                                 app.reply_label(comment),
+                                                app.thread_chrome(comment),
                                             );
                                             for mut comment_line in comment_lines {
                                                 let is_current = line_idx == current_line_idx;
@@ -888,6 +896,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                     app.comment_cursor,
                                     line_range,
                                     app.comment_input_action(false),
+                                    app.comment_threads,
                                     comment_width,
                                     app.comment_vim_mode_label()
                                         .as_ref()
@@ -963,6 +972,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 app.comment_cursor,
                                                 line_range,
                                                 app.comment_input_action(true),
+                                                app.comment_threads,
                                                 comment_width,
                                                 app.comment_vim_mode_label()
                                                     .as_ref()
@@ -1035,9 +1045,9 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 &comment.content,
                                                 line_range,
                                                 comment_width,
-                                                (comment.author != app.username)
-                                                    .then_some(comment.author.as_str()),
+                                                app.comment_box_author(comment),
                                                 app.reply_label(comment),
+                                                app.thread_chrome(comment),
                                             );
                                             for mut comment_line in comment_lines {
                                                 let indicator =
@@ -1093,6 +1103,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                     app.comment_cursor,
                                     line_range,
                                     app.comment_input_action(false),
+                                    app.comment_threads,
                                     comment_width,
                                     app.comment_vim_mode_label()
                                         .as_ref()
@@ -1387,7 +1398,10 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
 
     // Comment-box overlays painted last so the box + bar always win on their
     // single cells regardless of cursor-line / selection underlays.
-    crate::ui::diff_view::paint_comment_box_bar(frame, &overlay_ctx);
+    // Threads draw no bar from a box up to its line.
+    if !app.comment_threads {
+        crate::ui::diff_view::paint_comment_box_bar(frame, &overlay_ctx);
+    }
     crate::ui::diff_view::paint_comment_box_right_border(frame, &overlay_ctx);
 
     // Calculate screen position for comment cursor if in Comment mode
@@ -1478,8 +1492,13 @@ fn render_remote_threads_for_anchor(
 
         // Render the entire thread as one fused box so it reads as a
         // single discussion unit.
-        let thread_lines =
-            comment_panel::format_remote_thread_lines(&app.theme, thread, muted, app.forge_kind());
+        let thread_lines = comment_panel::format_remote_thread_lines(
+            &app.theme,
+            thread,
+            muted,
+            app.forge_kind(),
+            app.comment_threads,
+        );
         let box_top_row = *line_idx;
         for mut comment_line in thread_lines {
             let indicator = cursor_indicator(*line_idx, current_line_idx);

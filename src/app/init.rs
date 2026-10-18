@@ -641,6 +641,7 @@ impl App {
             list_reviewed_file_comments: false,
             list_comment_replies: false,
             jump_to_next_unreviewed: false,
+            comment_threads: false,
             last_marked_reviewed: None,
             commit_selection_start: CommitSelectionStart::default(),
             initial_comments_visibility: None,

@@ -1505,7 +1505,9 @@ impl App {
             .split('\n')
             .map(|line| crate::ui::comment_panel::wrap_segments(line, content_area).len())
             .sum();
-        2 + visual_lines // top border + visual segments + bottom border
+        // Header (or, for a reply, its divider) + visual segments, and the
+        // closing rule unless a reply follows: a thread is one box.
+        1 + visual_lines + usize::from(!comment.continues_thread.0)
     }
 
     /// Update viewport_width and trigger annotation rebuild if it changed.

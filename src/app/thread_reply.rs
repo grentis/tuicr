@@ -111,8 +111,12 @@ impl App {
     /// Header tag for a comment that answers a thread, such as
     /// `↳ reply to @alice`; `None` for an ordinary comment.
     pub fn reply_label(&self, comment: &Comment) -> Option<String> {
-        // A local reply names whom it answers.
+        // A local reply: drawn as a thread it names its author on its
+        // divider; as a box of its own it names whom it answers.
         if let Some(root_id) = comment.reply_to.as_deref() {
+            if self.comment_threads {
+                return None;
+            }
             let author = self
                 .session
                 .find_comment_by_id(root_id)

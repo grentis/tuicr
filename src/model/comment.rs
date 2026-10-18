@@ -201,7 +201,25 @@ pub struct Comment {
     /// comment that starts a thread. Local reviews only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<String>,
+    /// Whether a reply follows this comment in its thread, so it draws no
+    /// closing rule of its own. Worked out from the comments beside it by
+    /// `FileReview::order_threads`; never saved, and ignored by `==`.
+    #[serde(skip)]
+    pub continues_thread: ThreadContinues,
 }
+
+/// See `Comment::continues_thread`. Always equal, so the hint never makes two
+/// comments differ.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ThreadContinues(pub bool);
+
+impl PartialEq for ThreadContinues {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for ThreadContinues {}
 
 impl Comment {
     pub fn new(content: String, comment_type: CommentType, side: Option<LineSide>) -> Self {
@@ -220,6 +238,7 @@ impl Comment {
             commit_id: None,
             reply_to_thread: None,
             reply_to: None,
+            continues_thread: ThreadContinues::default(),
         }
     }
 
@@ -245,6 +264,7 @@ impl Comment {
             commit_id: None,
             reply_to_thread: None,
             reply_to: None,
+            continues_thread: ThreadContinues::default(),
         }
     }
 

@@ -14,8 +14,7 @@ use crate::theme::Theme;
 use crate::ui::styles;
 
 /// Content prefix used on every comment-body line. 4 pad chars + `│` + 2 spaces.
-/// The 4-char left pad lets the bar painter draw `│` up through diff lines
-/// without colliding with the col-6 `▌` add/del prefix.
+/// The 4-char left pad keeps the box clear of the col-6 `▌` add/del prefix.
 const BORDER_PREFIX: &str = "    │  ";
 const BORDER_PREFIX_WIDTH: usize = 7;
 
@@ -166,6 +165,12 @@ pub struct CommentTypePresentation {
 ///
 /// Returns a tuple of (lines, cursor_info) where cursor_info contains the position
 /// of the cursor within the formatted output for IME positioning.
+/// The frame of a local comment box: the colour forge threads are drawn
+/// in, for every author. A comment's type keeps its colour on its badge.
+fn local_box_style(theme: &Theme) -> Style {
+    Style::default().fg(theme.diff_hunk_header)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn format_comment_input_lines(
     theme: &Theme,
@@ -174,12 +179,17 @@ pub fn format_comment_input_lines(
     cursor_pos: usize,
     line_range: Option<LineRange>,
     action: &str,
+    threads: bool,
     width: usize,
     vim_mode: Option<(&str, bool)>,
     supports_keyboard_enhancement: bool,
 ) -> (Vec<Line<'static>>, CommentCursorInfo) {
     let type_style = styles::comment_type_style(theme, comment_type.color);
-    let border_style = styles::comment_border_style(theme, comment_type.color);
+    let border_style = if threads {
+        local_box_style(theme)
+    } else {
+        styles::comment_border_style(theme, comment_type.color)
+    };
     let cursor_style = Style::default()
         .fg(theme.cursor_color)
         .add_modifier(Modifier::UNDERLINED);
@@ -205,7 +215,12 @@ pub fn format_comment_input_lines(
     // Top-left corner becomes `├` when a line range is present — the bar
     // painter then draws `│` going up through the range and a `╭` at the
     // topmost covered line, so the tee reads as the bar joining the box.
-    let top_corner = if line_range.is_some() { '├' } else { '╭' };
+    // Threads draw no bar.
+    let top_corner = if line_range.is_some() && !threads {
+        '├'
+    } else {
+        '╭'
+    };
     let top_prefix = format!("    {top_corner}── ");
 
     // Top border with type label and hints. In vim mode the hints describe the
@@ -359,7 +374,15 @@ pub fn format_remote_thread_lines(
     thread: &crate::forge::remote_comments::RemoteReviewThread,
     muted: bool,
     forge_kind: Option<ForgeKind>,
+    threads: bool,
 ) -> Vec<Line<'static>> {
+    // Anchored on a line, the box opens with a tee the bar joins; threads
+    // draw no bar.
+    let top_prefix = if threads {
+        "    ╭── "
+    } else {
+        "    ├── "
+    };
     let (badge_fg, border_fg, body_fg) = if muted {
         (theme.fg_dim, theme.fg_dim, theme.fg_dim)
     } else {
@@ -381,8 +404,6 @@ pub fn format_remote_thread_lines(
         None => String::new(),
     };
 
-    // Remote review threads always anchor on a specific line/range, so the
-    // top corner is a tee — the bar painter draws the rest going up.
     let mut result = Vec::new();
     let mut iter = thread.comments.iter().peekable();
     let mut is_first = true;
@@ -397,7 +418,7 @@ pub fn format_remote_thread_lines(
             }
             badge_text.push_str("] ");
             result.push(Line::from(vec![
-                Span::styled("    ├── ".to_string(), border_style),
+                Span::styled(top_prefix.to_string(), border_style),
                 Span::styled(badge_text, badge_style),
                 Span::styled(line_info.clone(), styles::dim_style(theme)),
                 Span::styled("─".repeat(20), border_style),
@@ -521,6 +542,35 @@ pub(crate) fn markdown_body_lines(
 /// resulting badge reads `[TYPE @name]`, mirroring the remote forge badge
 /// format used for remote PR threads. `None` keeps the existing neutral
 /// `[TYPE]` badge and theme border.
+/// Where a local comment sits in its thread, which decides its frame: a
+/// reply opens with an `↳ @author` divider instead of a header, and a
+/// comment a reply follows leaves the closing rule to the thread's last
+/// message. A thread so reads as one box, as a forge thread does.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThreadChrome {
+    /// Draw local comments as threads (`comment_style = "threads"`); otherwise each
+    /// comment is its own box, as upstream draws it.
+    pub threads: bool,
+    /// The reply's author, when the comment answers a thread.
+    pub reply_author: Option<String>,
+    /// A reply follows in the same thread.
+    pub continues: bool,
+}
+
+impl ThreadChrome {
+    pub fn of(comment: &crate::model::Comment, threads: bool) -> Self {
+        if !threads {
+            return Self::default();
+        }
+        Self {
+            threads,
+            reply_author: comment.reply_to.is_some().then(|| comment.author.clone()),
+            continues: comment.continues_thread.0,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn format_comment_lines(
     theme: &Theme,
     comment_type: CommentTypePresentation,
@@ -529,24 +579,44 @@ pub fn format_comment_lines(
     width: usize,
     author: Option<&str>,
     reply_label: Option<String>,
+    thread: ThreadChrome,
 ) -> Vec<Line<'static>> {
     let type_style = styles::comment_type_style(theme, comment_type.color);
+    // A reply takes its thread's frame: its author is on its divider.
+    let author = author.filter(|_| thread.reply_author.is_none());
+    // Threads: one colour for every box, whoever wrote it, as a forge thread
+    // has. Otherwise the author's colour, else the type's.
     let border_style = match author {
+        _ if thread.threads => local_box_style(theme),
         Some(name) => Style::default()
             .fg(styles::author_color_for(name))
-            .add_modifier(ratatui::style::Modifier::BOLD),
+            .add_modifier(Modifier::BOLD),
         None => styles::comment_border_style(theme, comment_type.color),
     };
 
     // `None` comments have an empty label: drop the `[TYPE]` badge, keeping the
     // author tag when present so per-author coloring still reads.
-    let badge_text = match (author, comment_type.label.is_empty()) {
-        (Some(name), true) => format!("[@{name}] "),
-        (Some(name), false) => format!("[{} @{name}] ", comment_type.label),
-        (None, true) => String::new(),
-        (None, false) => format!("[{}] ", comment_type.label),
+    // `[TYPE @author]` as a forge thread heads itself: bold, in the box's
+    // colour, with only the type word in the type's colour.
+    let badge_style = border_style.add_modifier(Modifier::BOLD);
+    let label = &comment_type.label;
+    let badge: Vec<Span<'static>> = match (author, label.is_empty()) {
+        (Some(name), true) if !thread.threads => {
+            vec![Span::styled(format!("[@{name}] "), type_style)]
+        }
+        (Some(name), false) if !thread.threads => {
+            vec![Span::styled(format!("[{label} @{name}] "), type_style)]
+        }
+        (Some(name), true) => vec![Span::styled(format!("[@{name}] "), badge_style)],
+        (Some(name), false) => vec![
+            Span::styled("[".to_string(), badge_style),
+            Span::styled(label.clone(), type_style),
+            Span::styled(format!(" @{name}] "), badge_style),
+        ],
+        (None, true) => Vec::new(),
+        (None, false) => vec![Span::styled(format!("[{label}] "), type_style)],
     };
-    let badge_width = badge_text.width();
+    let badge_width: usize = badge.iter().map(|span| span.content.width()).sum();
 
     let line_info = match line_range {
         Some(range) if range.is_single() => format!("L{} ", range.start),
@@ -563,19 +633,33 @@ pub fn format_comment_lines(
 
     let mut result = Vec::new();
 
-    let top_corner = if line_range.is_some() { '├' } else { '╭' };
+    let top_corner = if line_range.is_some() && !thread.threads {
+        '├'
+    } else {
+        '╭'
+    };
     let top_prefix = format!("    {top_corner}── ");
 
-    // Top border — fill dynamically so total line = width.
-    // top_prefix = 8 cols, then the badge (width depends on author), then
-    // optional line_info, then `─` fill out to `width`.
-    let top_fill = width.saturating_sub(8 + badge_width + line_info.width());
-    result.push(Line::from(vec![
-        Span::styled(top_prefix, border_style),
-        Span::styled(badge_text, type_style),
-        Span::styled(line_info, styles::dim_style(theme)),
-        Span::styled("─".repeat(top_fill), border_style),
-    ]));
+    if let Some(reply_author) = &thread.reply_author {
+        // The divider a forge thread draws between its messages.
+        let label = format!("\u{21b3} @{reply_author} ");
+        let fill = width.saturating_sub(8 + label.width());
+        result.push(Line::from(vec![
+            Span::styled("    ├── ".to_string(), border_style),
+            Span::styled(label, border_style),
+            Span::styled("─".repeat(fill), border_style),
+        ]));
+    } else {
+        // Top border — fill dynamically so total line = width.
+        // top_prefix = 8 cols, then the badge (width depends on author), then
+        // optional line_info, then `─` fill out to `width`.
+        let top_fill = width.saturating_sub(8 + badge_width + line_info.width());
+        let mut spans = vec![Span::styled(top_prefix, border_style)];
+        spans.extend(badge);
+        spans.push(Span::styled(line_info, styles::dim_style(theme)));
+        spans.push(Span::styled("─".repeat(top_fill), border_style));
+        result.push(Line::from(spans));
+    }
 
     // Content lines — markdown-highlighted, pre-wrapped at content_area.
     let mut body_lines = markdown_body_lines(theme, content, content_area);
@@ -585,11 +669,14 @@ pub fn format_comment_lines(
     }
     result.extend(body_lines);
 
-    // Bottom border — "    ╰" = 5 chars, fill to width
-    result.push(Line::from(vec![Span::styled(
-        "    ╰".to_string() + &"─".repeat(width.saturating_sub(5)),
-        border_style,
-    )]));
+    // Bottom border — "    ╰" = 5 chars, fill to width. A comment a reply
+    // follows leaves it to the thread's last message.
+    if !thread.continues {
+        result.push(Line::from(vec![Span::styled(
+            "    ╰".to_string() + &"─".repeat(width.saturating_sub(5)),
+            border_style,
+        )]));
+    }
 
     result
 }
@@ -764,6 +851,7 @@ mod tests {
                     viewport_width.saturating_sub(1),
                     None,
                     None,
+                    ThreadChrome::default(),
                 );
                 assert_eq!(
                     App::comment_display_lines(&comment, viewport_width),
@@ -890,6 +978,7 @@ mod tests {
             0,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -919,6 +1008,7 @@ mod tests {
             cursor_pos,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -947,6 +1037,7 @@ mod tests {
             cursor_pos,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -976,6 +1067,7 @@ mod tests {
             cursor_pos,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -1004,6 +1096,7 @@ mod tests {
             cursor_pos,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -1033,6 +1126,7 @@ mod tests {
             cursor_pos,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -1057,6 +1151,7 @@ mod tests {
             0,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -1083,6 +1178,7 @@ mod tests {
             0,
             None,
             "Add",
+            false,
             80,
             None,
             false,
@@ -1129,6 +1225,7 @@ mod tests {
             cursor,
             None,
             "Add",
+            false,
             80,
             None,
             true,
@@ -1168,6 +1265,7 @@ mod tests {
             80,
             None,
             None,
+            ThreadChrome::default(),
         );
         // Header + footer wrap the body; reconstruct must round-trip the text.
         assert_eq!(reconstruct(&lines), content);
@@ -1212,8 +1310,13 @@ mod tests {
             }],
         };
 
-        let lines =
-            format_remote_thread_lines(&test_theme(), &thread, false, Some(ForgeKind::GitLab));
+        let lines = format_remote_thread_lines(
+            &test_theme(),
+            &thread,
+            false,
+            Some(ForgeKind::GitLab),
+            false,
+        );
         let header = lines[0]
             .spans
             .iter()
