@@ -2721,3 +2721,19 @@ scope_line = "no"
         );
     }
 }
+
+#[cfg(test)]
+mod username_tests {
+    use super::*;
+
+    #[test]
+    fn should_prefer_the_configured_username() {
+        let config = AppConfig {
+            username: Some(" alice ".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(resolved_username(Some(&config), true), "alice");
+        assert_eq!(resolved_username(None, true), "user");
+    }
+}

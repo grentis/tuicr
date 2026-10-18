@@ -527,11 +527,163 @@ fn order_threads(comments: &mut Vec<Comment>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::comment::{Comment, CommentType};
+    use crate::model::comment::{Comment, CommentType, LineSide};
     use crate::model::{DiffHunk, DiffLine, LineOrigin};
 
     // Arbitrary hash value for tests that don't care about the specific hash.
     const SOME_HASH: u64 = 0xdeadbeef;
+
+    fn said(author: &str, text: &str) -> Comment {
+        Comment::new(
+            text.to_string(),
+            CommentType::default(),
+            Some(LineSide::New),
+        )
+        .with_author(author)
+    }
+
+    fn texts(comments: &[Comment]) -> Vec<&str> {
+        comments.iter().map(|c| c.content.as_str()).collect()
+    }
+
+    #[test]
+    fn should_store_a_reply_after_its_thread_on_the_same_line() {
+        // given: two threads on line 3, the first already answered once
+        let mut review = FileReview::new(PathBuf::from("a.rs"), FileStatus::Modified, SOME_HASH);
+        let first = said("user", "rename it");
+        let first_id = first.id.clone();
+        review.add_line_comment(3, first);
+        review.add_line_comment(3, said("user", "and test it"));
+        let mut ranged = said("user", "ranged");
+        ranged.line_range = Some(crate::model::LineRange::new(2, 3));
+        let ranged_id = ranged.id.clone();
+        review.add_line_comment(3, ranged);
+        let answer = review
+            .add_reply(&first_id, said("Claude", "renamed"))
+            .expect("first thread found");
+
+        // when: answering the answer
+        let again = review
+            .add_reply(&answer.id, said("user", "not like that"))
+            .expect("thread found through its reply");
+        let ranged_reply = review
+            .add_reply(&ranged_id, said("Claude", "done"))
+            .unwrap();
+
+        // then: both replies join the first thread, after its earlier messages
+        assert_eq!(answer.reply_to.as_deref(), Some(first_id.as_str()));
+        assert_eq!(again.reply_to.as_deref(), Some(first_id.as_str()));
+        assert_eq!(
+            texts(&review.line_comments[&3]),
+            [
+                "rename it",
+                "renamed",
+                "not like that",
+                "and test it",
+                "ranged",
+                "done"
+            ]
+        );
+        // and a reply sits where its thread does: same side and range
+        assert_eq!(
+            ranged_reply.line_range,
+            Some(crate::model::LineRange::new(2, 3))
+        );
+        assert_eq!(ranged_reply.side, Some(LineSide::New));
+        assert!(review.add_reply("missing", said("Claude", "?")).is_none());
+    }
+
+    #[test]
+    fn should_move_a_reply_appended_out_of_place_back_to_its_thread() {
+        let mut review = FileReview::new(PathBuf::from("a.rs"), FileStatus::Modified, SOME_HASH);
+        let first = said("user", "one");
+        let mut reply = said("Claude", "re: one");
+        reply.reply_to = Some(first.id.clone());
+        review.file_comments = vec![first, said("user", "two"), reply];
+
+        review.order_threads();
+
+        assert_eq!(texts(&review.file_comments), ["one", "re: one", "two"]);
+    }
+
+    #[test]
+    fn should_put_a_threads_first_comment_before_replies_stored_ahead_of_it() {
+        let mut review = FileReview::new(PathBuf::from("a.rs"), FileStatus::Modified, SOME_HASH);
+        let first = said("user", "sort these");
+        let mut reply = said("Claude", "sorted");
+        reply.reply_to = Some(first.id.clone());
+        review.file_comments = vec![reply, said("user", "two"), first];
+
+        review.order_threads();
+
+        assert_eq!(
+            texts(&review.file_comments),
+            ["two", "sort these", "sorted"]
+        );
+    }
+
+    #[test]
+    fn should_drop_a_threads_replies_with_it() {
+        let mut review = FileReview::new(PathBuf::from("a.rs"), FileStatus::Modified, SOME_HASH);
+        let first = said("user", "one");
+        let first_id = first.id.clone();
+        review.add_line_comment(3, first);
+        review.add_line_comment(3, said("user", "two"));
+        review
+            .add_reply(&first_id, said("Claude", "re: one"))
+            .unwrap();
+        review.line_comments.get_mut(&3).unwrap().remove(0);
+
+        review.drop_replies_to(&first_id);
+
+        assert_eq!(texts(&review.line_comments[&3]), ["two"]);
+    }
+
+    #[test]
+    fn should_reply_to_a_review_level_comment_and_drop_the_thread_together() {
+        let mut session = test_session();
+        let first = said("user", "overall: add docs");
+        let first_id = first.id.clone();
+        session.review_comments.push(first);
+        session
+            .review_comments
+            .push(said("user", "and a changelog"));
+
+        let (path, reply) = session
+            .add_reply(&first_id, said("Claude", "docs added"))
+            .expect("thread found");
+
+        assert_eq!(path, None);
+        assert_eq!(reply.reply_to.as_deref(), Some(first_id.as_str()));
+        assert_eq!(
+            texts(&session.review_comments),
+            ["overall: add docs", "docs added", "and a changelog"]
+        );
+        session.review_comments.remove(0);
+        session.drop_replies_to(&first_id);
+        assert_eq!(texts(&session.review_comments), ["and a changelog"]);
+    }
+
+    #[test]
+    fn should_find_the_file_a_reply_goes_to() {
+        let mut session = test_session();
+        session.add_file(PathBuf::from("a.rs"), FileStatus::Modified, SOME_HASH);
+        session.add_file(PathBuf::from("b.rs"), FileStatus::Modified, SOME_HASH);
+        let first = said("user", "on b");
+        let first_id = first.id.clone();
+        session
+            .get_file_mut(&PathBuf::from("b.rs"))
+            .unwrap()
+            .add_file_comment(first);
+
+        let (path, reply) = session
+            .add_reply(&first_id, said("Claude", "ok"))
+            .expect("thread found");
+
+        assert_eq!(path, Some(PathBuf::from("b.rs")));
+        assert_eq!(reply.reply_to.as_deref(), Some(first_id.as_str()));
+        assert_eq!(session.files[&PathBuf::from("b.rs")].file_comments.len(), 2);
+    }
 
     fn test_session() -> ReviewSession {
         ReviewSession::new(
