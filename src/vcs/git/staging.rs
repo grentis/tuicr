@@ -44,6 +44,39 @@ mod tests {
     }
 
     #[test]
+    fn stage_file_keeps_what_was_staged_outside_an_open_handle() {
+        // given: an open handle that has read the index, then a file staged
+        // by another process
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
+        create_initial_commit(&repo, "a.txt", "one\n");
+        fs::write(temp_dir.path().join("a.txt"), "two\n").unwrap();
+        fs::write(temp_dir.path().join("b.txt"), "new\n").unwrap();
+        repo.index().unwrap();
+        let status = std::process::Command::new("git")
+            .current_dir(temp_dir.path())
+            .args(["add", "a.txt"])
+            .status()
+            .expect("git add");
+        assert!(status.success());
+
+        // when: another file is staged through the handle
+        stage_file(&repo, Path::new("b.txt")).unwrap();
+
+        // then: both are staged
+        let reopened = Repository::open(temp_dir.path()).expect("failed to reopen repo");
+        let head_tree = reopened.head().unwrap().peel_to_tree().unwrap();
+        let index = reopened.index().unwrap();
+        let staged: Vec<_> = reopened
+            .diff_tree_to_index(Some(&head_tree), Some(&index), None)
+            .unwrap()
+            .deltas()
+            .filter_map(|delta| delta.new_file().path().map(Path::to_path_buf))
+            .collect();
+        assert_eq!(staged, [Path::new("a.txt"), Path::new("b.txt")]);
+    }
+
+    #[test]
     fn stage_file_adds_to_index() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
