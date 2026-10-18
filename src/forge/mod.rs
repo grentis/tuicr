@@ -66,24 +66,12 @@ where
 /// when either object is missing or git fails, so callers can fall back to
 /// the forge (or leave `base_sha` unrefined). See the `base_sha` gotcha in AGENTS.md.
 pub(crate) fn local_merge_base(repo_root: &Path, base_sha: &str, head_sha: &str) -> Option<String> {
-    use std::ffi::OsStr;
+    use crate::forge::local_git::{has_object, run_local_git};
 
-    for sha in [base_sha, head_sha] {
-        crate::process::run_command_output(
-            "git",
-            Some(repo_root),
-            ["cat-file", "-e", sha].iter().map(|s| OsStr::new(*s)),
-        )
-        .ok()?;
+    if !has_object(repo_root, base_sha) || !has_object(repo_root, head_sha) {
+        return None;
     }
-    let output = crate::process::run_command_output(
-        "git",
-        Some(repo_root),
-        ["merge-base", base_sha, head_sha]
-            .iter()
-            .map(|s| OsStr::new(*s)),
-    )
-    .ok()?;
+    let output = run_local_git(repo_root, &["merge-base", base_sha, head_sha])?;
     let sha = output.trim();
     (!sha.is_empty()).then(|| sha.to_string())
 }
