@@ -1796,6 +1796,53 @@ fn comment_navigator_names_authors_when_replies_are_listed() {
     assert!(rows[1].ends_with("\u{21b3} \u{25cf} @bob"), "{rows:?}");
 }
 
+fn add_own_comment(app: &mut App) {
+    let a = app.session.files.get_mut(&PathBuf::from("a.rs")).unwrap();
+    let comment = Comment::new(
+        "mine".to_string(),
+        CommentType::from_id("note"),
+        Some(LineSide::New),
+    )
+    .with_author(app.username.clone());
+    a.line_comments.entry(1).or_default().push(comment);
+    app.rebuild_annotations();
+}
+
+#[test]
+fn comment_navigator_names_your_comments_when_replies_are_listed() {
+    let mut app = app_with_thread_replies(false);
+    add_own_comment(&mut app);
+    app.list_comment_replies = true;
+
+    let rows = rendered_navigator_rows(&mut app);
+
+    let user = app.username.clone();
+    assert!(
+        rows.iter()
+            .any(|row| row.ends_with(&format!("\u{25cf} @{user} a.rs:1"))),
+        "{rows:?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.ends_with(&format!("\u{21b3} \u{25cf} @{user}"))),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn comment_navigator_leaves_your_comments_unnamed_by_default() {
+    let mut app = app_with_thread_replies(false);
+    add_own_comment(&mut app);
+
+    let rows = rendered_navigator_rows(&mut app);
+
+    assert!(
+        rows.iter()
+            .any(|row| row.ends_with(" a.rs:1") && !row.contains('\u{25cf}')),
+        "{rows:?}"
+    );
+}
+
 #[test]
 fn comment_navigator_shows_only_locations_by_default() {
     let mut app = app_with_thread_replies(false);
