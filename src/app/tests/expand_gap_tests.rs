@@ -2673,3 +2673,34 @@ fn should_draw_each_local_comment_as_its_own_box_by_default() {
     assert_eq!(app.comment_box_author(&comments[0]), None);
     assert_eq!(app.comment_box_author(&comments[1]), Some("Claude"));
 }
+
+/// Mark `a.rs` reviewed in a local review with no comments, press `q`, and
+/// return whether the saved session still has it marked.
+fn reviewed_kept_after_quit(keep_reviewed_on_quit: bool) -> bool {
+    let _reviews = LocalThreadReviewsDir::new();
+    let files = vec![make_file_with_hunks("a.rs", vec![make_hunk(1, 2)])];
+    let mut app = build_app_with_files(files, 10);
+    app.keep_reviewed_on_quit = keep_reviewed_on_quit;
+    app.toggle_reviewed_for_file_idx(0, false);
+    assert!(!app.session.has_comments());
+
+    crate::handler::handle_diff_action(&mut app, crate::input::Action::Quit);
+    assert!(app.should_quit);
+
+    let path = crate::persistence::storage::session_path(&app.session).expect("session path");
+    crate::persistence::storage::load_session(&path)
+        .map(|saved| saved.is_file_reviewed(&PathBuf::from("a.rs")))
+        .unwrap_or(false)
+}
+
+#[test]
+fn should_keep_reviewed_files_on_quit_when_configured() {
+    assert!(reviewed_kept_after_quit(true));
+}
+
+#[test]
+fn should_discard_reviewed_only_state_on_quit_by_default() {
+    // Upstream behaviour stays the default: a review with nothing but
+    // reviewed markers reopens clean.
+    assert!(!reviewed_kept_after_quit(false));
+}
