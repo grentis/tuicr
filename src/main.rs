@@ -277,15 +277,11 @@ fn main() -> anyhow::Result<()> {
                 if let Some(w) = cfg.comment_tab_width {
                     app.comment_tab_width = w;
                 }
-                if let Some(username) = cfg
-                    .username
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                {
-                    app.username = username.to_string();
-                }
             }
+            app.username = tuicr::config::resolved_username(
+                config_outcome.config.as_ref(),
+                app.forge_config.extended_comments,
+            );
             app
         }
         Err(e) => {

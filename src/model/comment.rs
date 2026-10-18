@@ -196,6 +196,11 @@ pub struct Comment {
     /// into it on submit. `None` for an ordinary comment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to_thread: Option<String>,
+    /// The local comment this one answers: the first comment of its thread,
+    /// stored on the same line (or file) right after it. `None` for a
+    /// comment that starts a thread. Local reviews only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
 }
 
 impl Comment {
@@ -214,6 +219,7 @@ impl Comment {
             remote_comment_id: None,
             commit_id: None,
             reply_to_thread: None,
+            reply_to: None,
         }
     }
 
@@ -238,6 +244,7 @@ impl Comment {
             remote_comment_id: None,
             commit_id: None,
             reply_to_thread: None,
+            reply_to: None,
         }
     }
 

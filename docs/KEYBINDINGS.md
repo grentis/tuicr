@@ -180,16 +180,16 @@ Shown below the file tree when local comments or visible remote PR threads exist
 | `r` | Toggle file reviewed (syncs with GitHub's *Viewed* checkbox via `[forge] sync_viewed`) |
 | `Ctrl-o` | With `jump_to_next_unreviewed`, go back to the file the last `r` marked, to look at it again or unmark it with `r` |
 | `R` | Toggle hunk reviewed |
-| `c` | Add line comment (or file comment if not on a diff line); on a GitHub thread, reply to it |
+| `c` | Add line comment (or file comment if not on a diff line); on a GitHub thread, reply to it; with `[forge] extended_comments`, on a local comment in a local review, reply to it in its thread |
 | `C` | Add file comment |
 | `<leader>c` | Add review comment (sent as the review body on `:submit`) |
 | `<leader>C` | Post a PR conversation comment now, verbatim, as GitHub's comment box does, so comment-command bots see it (GitHub, `[forge] extended_comments`) |
 | `v` / `V` | Enter visual mode for range comments |
-| `dd` | Delete comment at cursor |
+| `dd` | Delete comment at cursor. With `[forge] extended_comments`, also its replies when it starts a thread, and saved straight away |
 | `i` | Edit comment at cursor (vim: text cursor at start) |
 | `A` | Edit comment at cursor with text cursor at end (vim mode only) |
 | `e` | Open focused file in `$EDITOR` |
-| `y` | Copy review to clipboard |
+| `y` | Copy review to clipboard. With `[forge] extended_comments`, in a local review a thread someone else answered last is left out; one whose last message is yours is copied whole |
 | `Y` | Copy the comment at cursor to clipboard |
 
 `e` opens the file at the cursor's line. Terminal editors (`vim`, `nvim`, `nano`, …)

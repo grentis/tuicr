@@ -507,7 +507,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                 &app.comment_buffer,
                 app.comment_cursor,
                 None,
-                true,
+                app.comment_input_action(true),
                 ctx.panel_width.saturating_sub(1),
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -596,7 +596,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
             &app.comment_buffer,
             app.comment_cursor,
             None,
-            false,
+            app.comment_input_action(false),
             ctx.panel_width.saturating_sub(1),
             app.comment_vim_mode_label()
                 .as_ref()
@@ -697,7 +697,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                         &app.comment_buffer,
                         app.comment_cursor,
                         None,
-                        true,
+                        app.comment_input_action(true),
                         ctx.panel_width.saturating_sub(1),
                         app.comment_vim_mode_label()
                             .as_ref()
@@ -763,7 +763,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                 &app.comment_buffer,
                 app.comment_cursor,
                 None,
-                false,
+                app.comment_input_action(false),
                 ctx.panel_width.saturating_sub(1),
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -2080,7 +2080,7 @@ fn add_comments_to_line(
                         ctx.comment_buffer,
                         ctx.comment_cursor,
                         line_range,
-                        true,
+                        ctx.app.comment_input_action(true),
                         ctx.panel_width.saturating_sub(1),
                         ctx.app
                             .comment_vim_mode_label()
@@ -2170,7 +2170,7 @@ fn add_comments_to_line(
             ctx.comment_buffer,
             ctx.comment_cursor,
             line_range,
-            false,
+            ctx.app.comment_input_action(false),
             ctx.panel_width.saturating_sub(1),
             ctx.app
                 .comment_vim_mode_label()

@@ -429,7 +429,7 @@ fn handle_export(app: &mut App) {
     let slug = app.session_slug();
     if app.output_to_stdout {
         match generate_export_content(
-            &app.session,
+            &app.session_for_export(),
             &app.diff_source,
             &app.comment_types,
             &app.export,
@@ -444,7 +444,7 @@ fn handle_export(app: &mut App) {
         }
     } else {
         match export_to_clipboard(
-            &app.session,
+            &app.session_for_export(),
             &app.diff_source,
             &app.comment_types,
             &app.export,
@@ -1320,7 +1320,7 @@ pub fn handle_confirm_action(app: &mut App, action: Action) {
                 let slug = app.session_slug();
                 if app.output_to_stdout {
                     match generate_export_content(
-                        &app.session,
+                        &app.session_for_export(),
                         &app.diff_source,
                         &app.comment_types,
                         &app.export,
@@ -1332,7 +1332,7 @@ pub fn handle_confirm_action(app: &mut App, action: Action) {
                     }
                 } else {
                     match export_to_clipboard(
-                        &app.session,
+                        &app.session_for_export(),
                         &app.diff_source,
                         &app.comment_types,
                         &app.export,
@@ -1864,6 +1864,8 @@ fn handle_shared_normal_action(app: &mut App, action: Action) {
             let line = app.get_line_at_cursor();
             if app.enter_thread_reply_mode() {
                 // `c` on a remote thread answers it.
+            } else if app.enter_local_reply_mode() {
+                // `c` on a local comment, in a local review, answers it.
             } else if line.is_some() {
                 app.enter_comment_mode(false, line);
             } else {

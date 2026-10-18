@@ -1003,6 +1003,40 @@ fn is_supported_color_value(value: &str) -> bool {
     )
 }
 
+/// Who "you" are when no `username` is configured: git's `user.name`, as
+/// the checkout sees it. Works for any forge, or none, and offline. `None`
+/// when git has no name set.
+pub fn git_user_name() -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["config", "--get", "user.name"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !name.is_empty()).then_some(name)
+}
+
+/// Your name on comments: the configured `username`, else (with
+/// `[forge] extended_comments`) git's `user.name`, else
+/// `Comment::DEFAULT_AUTHOR`.
+pub fn resolved_username(config: Option<&AppConfig>, git_fallback: bool) -> String {
+    if let Some(name) = config
+        .and_then(|cfg| cfg.username.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return name.to_string();
+    }
+    // Tests stay off the machine's git setup.
+    if git_fallback
+        && !cfg!(test)
+        && let Some(name) = git_user_name()
+    {
+        return name;
+    }
+    crate::model::comment::DEFAULT_AUTHOR.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

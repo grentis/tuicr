@@ -111,6 +111,18 @@ impl App {
     /// Header tag for a comment that answers a thread, such as
     /// `↳ reply to @alice`; `None` for an ordinary comment.
     pub fn reply_label(&self, comment: &Comment) -> Option<String> {
+        // A local reply names whom it answers.
+        if let Some(root_id) = comment.reply_to.as_deref() {
+            let author = self
+                .session
+                .find_comment_by_id(root_id)
+                .and_then(|location| self.session.comment_at(&location))
+                .map(|root| root.author.clone());
+            return Some(match author {
+                Some(author) => format!("\u{21b3} reply to @{author} "),
+                None => "\u{21b3} reply ".to_string(),
+            });
+        }
         let thread_id = comment.reply_to_thread.as_deref()?;
         let author = self
             .forge_review_threads

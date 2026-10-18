@@ -162,7 +162,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 &app.comment_buffer,
                 app.comment_cursor,
                 None,
-                true,
+                app.comment_input_action(true),
                 comment_width,
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -252,7 +252,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
             &app.comment_buffer,
             app.comment_cursor,
             None,
-            false,
+            app.comment_input_action(false),
             comment_width,
             app.comment_vim_mode_label()
                 .as_ref()
@@ -359,7 +359,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                         &app.comment_buffer,
                         app.comment_cursor,
                         None,
-                        true,
+                        app.comment_input_action(true),
                         comment_width,
                         app.comment_vim_mode_label()
                             .as_ref()
@@ -428,7 +428,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 &app.comment_buffer,
                 app.comment_cursor,
                 None,
-                false,
+                app.comment_input_action(false),
                 comment_width,
                 app.comment_vim_mode_label()
                     .as_ref()
@@ -756,7 +756,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 &app.comment_buffer,
                                                 app.comment_cursor,
                                                 line_range,
-                                                true,
+                                                app.comment_input_action(true),
                                                 comment_width,
                                                 app.comment_vim_mode_label()
                                                     .as_ref()
@@ -887,7 +887,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                     &app.comment_buffer,
                                     app.comment_cursor,
                                     line_range,
-                                    false,
+                                    app.comment_input_action(false),
                                     comment_width,
                                     app.comment_vim_mode_label()
                                         .as_ref()
@@ -962,7 +962,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 &app.comment_buffer,
                                                 app.comment_cursor,
                                                 line_range,
-                                                true,
+                                                app.comment_input_action(true),
                                                 comment_width,
                                                 app.comment_vim_mode_label()
                                                     .as_ref()
@@ -1092,7 +1092,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                     &app.comment_buffer,
                                     app.comment_cursor,
                                     line_range,
-                                    false,
+                                    app.comment_input_action(false),
                                     comment_width,
                                     app.comment_vim_mode_label()
                                         .as_ref()
