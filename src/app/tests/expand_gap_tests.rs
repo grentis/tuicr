@@ -2409,3 +2409,223 @@ fn expand_opens_everything_when_part_of_the_file_is_open() {
 
     assert_eq!(expanded_rows(&app), 9 + 15 + 16);
 }
+
+/// Points the session store at a temp dir for the test's lifetime.
+struct LocalThreadReviewsDir {
+    _dir: tempfile::TempDir,
+}
+
+impl LocalThreadReviewsDir {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().expect("reviews dir");
+        crate::persistence::storage::set_test_reviews_dir(Some(dir.path().to_path_buf()));
+        Self { _dir: dir }
+    }
+}
+
+impl Drop for LocalThreadReviewsDir {
+    fn drop(&mut self) {
+        crate::persistence::storage::set_test_reviews_dir(None);
+    }
+}
+
+/// A local review with one file comment by `user` on `a.rs`, the cursor on
+/// it, and `extended_comments` set to `threads`.
+fn app_with_a_file_comment(threads: bool) -> (App, String) {
+    let files = vec![make_file_with_hunks("a.rs", vec![make_hunk(1, 2)])];
+    let mut app = build_app_with_files(files, 10);
+    app.sync_viewport_width(80);
+    app.forge_config.extended_comments = threads;
+    let comment = Comment::new("Rename it".to_string(), CommentType::default(), None);
+    let id = comment.id.clone();
+    app.session
+        .get_file_mut(&PathBuf::from("a.rs"))
+        .unwrap()
+        .add_file_comment(comment);
+    app.rebuild_annotations();
+    cursor_on_file_comment(&mut app, &id);
+    (app, id)
+}
+
+/// Put the cursor on the file comment `id` of `a.rs`.
+fn cursor_on_file_comment(app: &mut App, id: &str) {
+    let index = app.session.files[&PathBuf::from("a.rs")]
+        .file_comments
+        .iter()
+        .position(|c| c.id == id)
+        .expect("comment");
+    app.diff_state.cursor_line = app
+        .line_annotations
+        .iter()
+        .position(|a| {
+            matches!(a, AnnotatedLine::FileComment { file_idx: 0, comment_idx: c } if *c == index)
+        })
+        .expect("comment row");
+}
+
+fn file_comment_texts(app: &App) -> Vec<(String, String)> {
+    app.session.files[&PathBuf::from("a.rs")]
+        .file_comments
+        .iter()
+        .map(|c| (c.author.clone(), c.content.clone()))
+        .collect()
+}
+
+fn claude(text: &str) -> Comment {
+    Comment::new(text.to_string(), CommentType::default(), None).with_author("Claude")
+}
+
+#[test]
+fn should_answer_a_local_comment_in_its_thread_with_c() {
+    // given: Claude answered the user's comment
+    let (mut app, id) = app_with_a_file_comment(true);
+    let answer = app.session.add_reply(&id, claude("Done")).unwrap().1;
+    app.rebuild_annotations();
+    cursor_on_file_comment(&mut app, &answer.id);
+
+    // when: `c` on the answer, then saving
+    crate::handler::handle_diff_action(&mut app, crate::input::Action::AddLineComment);
+    assert_eq!(app.input_mode, InputMode::Comment);
+    assert!(app.message.as_ref().unwrap().content.contains("@Claude"));
+    app.comment_buffer = "Not quite".to_string();
+    app.save_comment();
+
+    // then: the reply ends the thread, labelled with whom it answers
+    assert_eq!(
+        file_comment_texts(&app),
+        [
+            ("user".to_string(), "Rename it".to_string()),
+            ("Claude".to_string(), "Done".to_string()),
+            ("user".to_string(), "Not quite".to_string()),
+        ]
+    );
+    let saved = &app.session.files[&PathBuf::from("a.rs")].file_comments[2];
+    assert_eq!(saved.reply_to.as_deref(), Some(id.as_str()));
+    assert_eq!(
+        app.reply_label(saved).as_deref(),
+        Some("\u{21b3} reply to @user ")
+    );
+}
+
+#[test]
+fn should_keep_c_starting_a_new_comment_without_extended_comments() {
+    let (mut app, _id) = app_with_a_file_comment(false);
+
+    assert!(!app.enter_local_reply_mode());
+    assert!(app.local_reply.is_none());
+}
+
+#[test]
+fn should_keep_c_starting_a_new_comment_in_a_pr_review() {
+    let (mut app, _id) = app_with_a_file_comment(true);
+    app.session.pr_session_key = Some(crate::forge::traits::PrSessionKey::new(
+        crate::forge::traits::ForgeRepository::github("github.com", "o", "r"),
+        1,
+        "abc",
+    ));
+
+    assert!(!app.enter_local_reply_mode());
+    assert!(app.local_reply.is_none());
+}
+
+#[test]
+fn should_leave_nothing_behind_when_a_reply_is_cancelled() {
+    let (mut app, _id) = app_with_a_file_comment(true);
+
+    assert!(app.enter_local_reply_mode());
+    // the box edits an empty reply standing at the end of the thread
+    assert_eq!(file_comment_texts(&app).len(), 2);
+    app.exit_comment_mode();
+
+    assert_eq!(
+        file_comment_texts(&app),
+        [("user".to_string(), "Rename it".to_string())]
+    );
+    assert!(app.local_reply.is_none());
+    assert!(app.editing_comment_id.is_none());
+}
+
+#[test]
+fn should_delete_a_threads_replies_with_it_and_save() {
+    let _reviews = LocalThreadReviewsDir::new();
+    let (mut app, id) = app_with_a_file_comment(true);
+    app.session.add_reply(&id, claude("Done")).unwrap();
+    app.rebuild_annotations();
+    cursor_on_file_comment(&mut app, &id);
+
+    assert!(app.delete_comment_at_cursor());
+
+    assert!(file_comment_texts(&app).is_empty());
+    assert!(!app.dirty);
+    let path = app.session_path.clone().expect("saved");
+    let saved = crate::persistence::storage::load_session(&path).unwrap();
+    assert!(saved.files[&PathBuf::from("a.rs")].file_comments.is_empty());
+}
+
+#[test]
+fn should_delete_only_the_comment_without_extended_comments() {
+    let (mut app, id) = app_with_a_file_comment(false);
+    app.session.add_reply(&id, claude("Done")).unwrap();
+    app.rebuild_annotations();
+    cursor_on_file_comment(&mut app, &id);
+
+    assert!(app.delete_comment_at_cursor());
+
+    assert_eq!(
+        file_comment_texts(&app),
+        [("Claude".to_string(), "Done".to_string())]
+    );
+    // not saved straight away: quitting still asks, as upstream
+    assert!(app.dirty);
+}
+
+/// An answered thread, a reopened one, and an unanswered comment.
+fn app_with_threads_to_export(threads: bool) -> App {
+    let (mut app, answered) = app_with_a_file_comment(threads);
+    app.session.add_reply(&answered, claude("Renamed")).unwrap();
+    let reopened = Comment::new("Add a test".into(), CommentType::default(), None);
+    let reopened_id = reopened.id.clone();
+    let file = app.session.get_file_mut(&PathBuf::from("a.rs")).unwrap();
+    file.add_file_comment(reopened);
+    file.add_file_comment(claude("Consider a constant"));
+    app.session
+        .add_reply(&reopened_id, claude("Which case?"))
+        .unwrap();
+    app.session
+        .add_reply(
+            &reopened_id,
+            Comment::new("The empty one".into(), CommentType::default(), None),
+        )
+        .unwrap();
+    app
+}
+
+fn exported_texts(app: &App) -> Vec<String> {
+    app.session_for_export().files[&PathBuf::from("a.rs")]
+        .file_comments
+        .iter()
+        .map(|c| c.content.clone())
+        .collect()
+}
+
+#[test]
+fn should_export_only_the_threads_waiting_on_an_answer() {
+    let app = app_with_threads_to_export(true);
+
+    assert_eq!(
+        exported_texts(&app),
+        [
+            "Add a test",
+            "\u{21b3} @Claude: Which case?",
+            "\u{21b3} @user: The empty one",
+            "Consider a constant",
+        ]
+    );
+}
+
+#[test]
+fn should_export_every_comment_without_extended_comments() {
+    let app = app_with_threads_to_export(false);
+
+    assert_eq!(exported_texts(&app).len(), 6);
+}
