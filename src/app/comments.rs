@@ -93,6 +93,12 @@ impl App {
         }
     }
 
+    /// A local reply is listed only with `list_replies`, as a forge reply
+    /// is; otherwise its thread is one entry.
+    fn lists_local_comment(&self, comment: &Comment) -> bool {
+        self.list_comment_replies || comment.reply_to.is_none()
+    }
+
     fn comment_navigator_item_for_key(
         &self,
         key: CommentNavigatorKey,
@@ -101,6 +107,9 @@ impl App {
         match key {
             CommentNavigatorKey::Review { comment_idx } => {
                 let comment = self.session.review_comments.get(comment_idx)?;
+                if !self.lists_local_comment(comment) {
+                    return None;
+                }
                 Some(CommentNavigatorItem {
                     key: CommentNavigatorKey::Review { comment_idx },
                     kind: CommentNavigatorKind::Local(comment.comment_type.clone()),
@@ -109,7 +118,7 @@ impl App {
                     line: None,
                     side: None,
                     author: Some(comment.author.clone()),
-                    reply: false,
+                    reply: self.list_comment_replies && comment.reply_to.is_some(),
                 })
             }
             CommentNavigatorKey::File {
@@ -119,6 +128,9 @@ impl App {
                 let path = self.diff_files.get(file_idx)?.display_path();
                 let review = self.session.files.get(path)?;
                 let comment = review.file_comments.get(comment_idx)?;
+                if !self.lists_local_comment(comment) {
+                    return None;
+                }
                 Some(CommentNavigatorItem {
                     key: CommentNavigatorKey::File {
                         file_idx,
@@ -130,7 +142,8 @@ impl App {
                     line: None,
                     side: None,
                     author: Some(comment.author.clone()),
-                    reply: self.list_comment_replies && comment.reply_to_thread.is_some(),
+                    reply: self.list_comment_replies
+                        && (comment.reply_to_thread.is_some() || comment.reply_to.is_some()),
                 })
             }
             CommentNavigatorKey::Line {
@@ -143,6 +156,9 @@ impl App {
                 let review = self.session.files.get(path)?;
                 let comments = review.line_comments.get(&line)?;
                 let comment = comments.get(comment_idx)?;
+                if !self.lists_local_comment(comment) {
+                    return None;
+                }
                 Some(CommentNavigatorItem {
                     key: CommentNavigatorKey::Line {
                         file_idx,
@@ -156,7 +172,8 @@ impl App {
                     line: Some(line),
                     side: Some(side),
                     author: Some(comment.author.clone()),
-                    reply: self.list_comment_replies && comment.reply_to_thread.is_some(),
+                    reply: self.list_comment_replies
+                        && (comment.reply_to_thread.is_some() || comment.reply_to.is_some()),
                 })
             }
             CommentNavigatorKey::Remote { thread_idx } => {
@@ -793,7 +810,7 @@ impl App {
         )
     }
 
-    fn find_comment_at_cursor(&self) -> Option<CommentLocation> {
+    pub(in crate::app) fn find_comment_at_cursor(&self) -> Option<CommentLocation> {
         let target = self.diff_state.cursor_line;
         let commit_set = self.selected_commit_set();
         match self.line_annotations.get(target) {
@@ -964,8 +981,14 @@ impl App {
         let Some(location) = self.find_comment_at_cursor() else {
             return false;
         };
+        let removed_id = self.session.comment_at(&location).map(|c| c.id.clone());
         if !self.session.remove_comment(&location) {
             return false;
+        }
+        let threads = self.forge_config.extended_comments;
+        // With threads, a thread's first comment takes its replies with it.
+        if threads && let Some(id) = removed_id {
+            self.session.drop_replies_to(&id);
         }
         let message = match location {
             CommentLocation::Review { .. } => "Review comment deleted".to_string(),
@@ -975,6 +998,18 @@ impl App {
         self.dirty = true;
         self.set_message(message);
         self.rebuild_annotations();
+        if threads {
+            return self.save_after_deleting();
+        }
+        true
+    }
+
+    /// Save a deletion straight away, as adding a comment does, so another
+    /// process reading the session (an agent) stops seeing the comment.
+    fn save_after_deleting(&mut self) -> bool {
+        if let Err(e) = self.save_current_session_merging_external() {
+            self.set_error(format!("Comment deleted; autosave failed: {e}"));
+        }
         true
     }
 
@@ -1185,6 +1220,7 @@ impl App {
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
         self.comment_reply = None;
+        self.local_reply = None;
     }
 
     pub fn enter_review_comment_mode(&mut self) {
@@ -1202,9 +1238,11 @@ impl App {
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
         self.comment_reply = None;
+        self.local_reply = None;
     }
 
     pub fn exit_comment_mode(&mut self) {
+        self.discard_reply_draft();
         self.input_mode = InputMode::Normal;
         self.comment_buffer.clear();
         self.comment_cursor = 0;
@@ -1212,6 +1250,8 @@ impl App {
         self.comment_vim_editor = None;
         self.comment_vim_command = None;
         self.comment_vim_pending = CommentVimPending::None;
+        self.comment_reply = None;
+        self.local_reply = None;
         self.mention = None;
         self.mention_lookup.dismissed_at = None;
         self.comment_reply = None;
@@ -1242,6 +1282,8 @@ impl App {
         // Check if we're editing an existing comment
         if let Some(target) = self.comment_reply.take() {
             message = self.save_thread_reply(target, content);
+        } else if let Some(target) = self.local_reply.take() {
+            message = self.save_local_reply(target, content);
         } else if let Some(editing_id) = &self.editing_comment_id {
             if let Some(comment) = self
                 .session

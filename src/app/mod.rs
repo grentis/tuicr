@@ -1298,6 +1298,9 @@ pub struct App {
     pub editing_comment_id: Option<String>,
     /// The thread the comment box answers (`c` on a thread).
     pub comment_reply: Option<ThreadReplyTarget>,
+    /// Set while the comment box answers a local comment (`c` on it, in a
+    /// local review); the saved comment joins its thread.
+    pub local_reply: Option<local_reply::LocalReplyTarget>,
 
     pub visual_selection: Option<VisualSelection>,
     /// True once the active mouse drag has actually moved off the press cell.
@@ -2017,6 +2020,7 @@ mod editor_target;
 mod file_filter;
 mod gaps;
 mod init;
+mod local_reply;
 mod mentions;
 mod modes;
 mod navigation;

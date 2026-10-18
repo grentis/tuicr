@@ -382,10 +382,12 @@ impl App {
         match stored.location {
             StoredCommentLocation::Review => {
                 session.review_comments.push(stored.comment);
+                session.order_threads();
             }
             StoredCommentLocation::File { path } => {
                 if let Some(review) = session.files.get_mut(&path) {
                     review.file_comments.push(stored.comment);
+                    review.order_threads();
                 }
             }
             StoredCommentLocation::Line { path, line } => {
@@ -395,6 +397,7 @@ impl App {
                         .entry(line)
                         .or_default()
                         .push(stored.comment);
+                    review.order_threads();
                 }
             }
         }
