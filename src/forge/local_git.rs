@@ -94,4 +94,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn does_not_download_what_a_partial_clone_lacks() {
+        // given: a partial clone holding the commits but none of the blobs
+        let dir = tempfile::tempdir().expect("tempdir");
+        let server = dir.path().join("server");
+        std::fs::create_dir(&server).expect("mkdir");
+        git(&server, &["init", "--quiet"]);
+        git(&server, &["config", "user.email", "test@example.com"]);
+        git(&server, &["config", "user.name", "test"]);
+        git(&server, &["config", "commit.gpgsign", "false"]);
+        git(&server, &["config", "uploadpack.allowFilter", "true"]);
+        std::fs::write(server.join("a.txt"), "one\n").expect("write");
+        git(&server, &["add", "a.txt"]);
+        git(&server, &["commit", "--quiet", "-m", "base"]);
+        std::fs::write(server.join("a.txt"), "two\n").expect("write");
+        git(&server, &["commit", "--quiet", "-am", "head"]);
+        let url = format!("file://{}", server.display());
+        git(
+            dir.path(),
+            &[
+                "clone",
+                "--quiet",
+                "--filter=blob:none",
+                "--no-checkout",
+                &url,
+                "clone",
+            ],
+        );
+        let clone = dir.path().join("clone");
+        let range = "HEAD~1..HEAD";
+
+        // when / then: the reads fail, so callers ask the forge instead
+        assert_eq!(read_blob(&clone, "HEAD", &PathBuf::from("a.txt")), None);
+        assert!(crate::vcs::git::raw::run_git_diff(&clone, &[range]).is_err());
+
+        // and: the blobs were there to download, so it is the guard that held
+        git(&clone, &["cat-file", "-p", "HEAD~1:a.txt"]);
+        git(&clone, &["cat-file", "-p", "HEAD:a.txt"]);
+        assert_eq!(
+            read_blob(&clone, "HEAD", &PathBuf::from("a.txt")).as_deref(),
+            Some("two\n")
+        );
+        assert!(crate::vcs::git::raw::run_git_diff(&clone, &[range]).is_ok());
+    }
 }
