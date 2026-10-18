@@ -71,6 +71,7 @@ pub(crate) fn annotation_row_height(app: &App, idx: usize) -> usize {
                     thread,
                     muted,
                     app.forge_kind(),
+                    app.comment_threads,
                 )
                 .into_iter()
                 .nth(row)

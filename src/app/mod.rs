@@ -1566,6 +1566,9 @@ pub struct App {
     /// Config `jump_to_next_unreviewed`: `r` in the diff moves on to the next
     /// file not yet reviewed after marking one.
     pub jump_to_next_unreviewed: bool,
+    /// Config `comment_style = "threads"`: comments are drawn one box per
+    /// thread, as forge threads are, with no marker line up to their line.
+    pub comment_threads: bool,
     /// The file the last moving `r` marked, for `Ctrl-o` to go back to.
     pub last_marked_reviewed: Option<PathBuf>,
     /// Which commits are selected when a multi-commit review first opens.
@@ -2012,6 +2015,7 @@ impl AppStartupOptions<'_> {
 
 mod annotations;
 mod coloring;
+mod comment_style;
 mod comment_vim;
 mod comments;
 mod commits;

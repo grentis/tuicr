@@ -63,9 +63,14 @@ impl App {
 
         self.line_annotations.clear();
         self.colored_hunks.clear();
-        // Replies follow their thread.
+        // Replies follow their thread; with `comment_style = "threads"`,
+        // which comment closes its thread decides its height, so settle both
+        // before anything is counted.
         if self.forge_config.extended_comments {
             self.session.order_threads();
+        }
+        if !self.comment_threads {
+            self.session.clear_thread_continuations();
         }
 
         // Pre-index remote threads by (path, line, side) for quick lookup

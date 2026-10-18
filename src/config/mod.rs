@@ -246,6 +246,9 @@ pub struct AppConfig {
     /// next file not yet reviewed, as `}` would. Defaults to false, where the
     /// cursor stays on the file just marked.
     pub jump_to_next_unreviewed: Option<bool>,
+    /// How comments are drawn: `boxes` (each its own box, the default) or
+    /// `threads` (one box per thread, as forge threads are drawn).
+    pub comment_style: Option<String>,
     /// `[forge]` section settings. Always present; `None` means "no override"
     /// and downstream code should treat it as `ForgeConfig::default()`.
     pub forge: Option<ForgeConfig>,
@@ -313,6 +316,7 @@ const KNOWN_KEYS: &[&str] = &[
     "list_reviewed_file_comments",
     "list_comment_replies",
     "jump_to_next_unreviewed",
+    "comment_style",
     "forge",
     "export",
 ];
@@ -667,6 +671,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         list_reviewed_file_comments: read_bool(table, "list_reviewed_file_comments", &mut warnings),
         list_comment_replies: read_bool(table, "list_comment_replies", &mut warnings),
         jump_to_next_unreviewed: read_bool(table, "jump_to_next_unreviewed", &mut warnings),
+        comment_style: read_enum(table, "comment_style", &["boxes", "threads"], &mut warnings),
         forge: table
             .get("forge")
             .and_then(|v| parse_forge(v, &mut warnings)),
