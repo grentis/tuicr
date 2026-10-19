@@ -1,4 +1,4 @@
-//! Committing the index for git actions.
+//! Committing and rewording for git actions.
 //!
 //! Uses the `git` CLI, not libgit2, so the user's signing (`commit.gpgsign`) and hooks apply.
 
@@ -43,6 +43,201 @@ pub fn commit_staged(repo_root: &Path, message: &str) -> Result<String> {
         ));
     }
     Ok(String::from_utf8_lossy(&head.stdout).trim().to_string())
+}
+
+/// Run git in `repo_root` with optional `stdin`; return trimmed stdout, or git's error text.
+fn git(
+    repo_root: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+    env: &[(&str, &str)],
+) -> Result<String> {
+    let mut command = Command::new("git");
+    command
+        .current_dir(repo_root)
+        .args(args)
+        .envs(env.iter().copied())
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|e| TuicrError::VcsCommand(format!("Failed to run git: {e}")))?;
+    if let (Some(input), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        pipe.write_all(input.as_bytes())?;
+    }
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Err(TuicrError::VcsCommand(if stderr.is_empty() {
+            stdout
+        } else {
+            stderr
+        }));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// A commit's message exactly as stored, everything after its headers.
+fn raw_message(repo_root: &Path, id: &str) -> Result<String> {
+    let output = Command::new("git")
+        .current_dir(repo_root)
+        .args(["cat-file", "commit", id])
+        .output()?;
+    if !output.status.success() {
+        return Err(TuicrError::VcsCommand(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(text
+        .split_once("\n\n")
+        .map_or_else(String::new, |(_, message)| message.to_string()))
+}
+
+/// The message of commit `id`, without its trailing newline.
+pub fn commit_message(repo_root: &Path, id: &str) -> Result<String> {
+    Ok(raw_message(repo_root, id)?.trim_end().to_string())
+}
+
+/// Set the message of commit `id` on the current branch; return every changed id, old to new (it
+/// and each later commit).
+///
+/// The latest commit is amended (`git commit --amend --only`), so hooks and signing apply. An older
+/// one is reworded without a rebase: each commit from it to HEAD is rewritten with the same tree,
+/// author and date and the new parent (and message, for the target), then the branch moves to the
+/// last. The index and working tree are untouched and no conflict is possible; `commit.gpgsign`
+/// signs them, but hooks do not run.
+pub fn reword_commit(repo_root: &Path, id: &str, message: &str) -> Result<Vec<(String, String)>> {
+    let message = format!("{}\n", message.trim_end());
+    let head = git(repo_root, &["rev-parse", "HEAD"], None, &[])?;
+    let target = git(
+        repo_root,
+        &["rev-parse", "--verify", &format!("{id}^{{commit}}")],
+        None,
+        &[],
+    )?;
+
+    if target == head {
+        git(
+            repo_root,
+            &["commit", "--amend", "--only", "--quiet", "--file", "-"],
+            Some(&message),
+            &[],
+        )?;
+        let new_head = git(repo_root, &["rev-parse", "HEAD"], None, &[])?;
+        return Ok(vec![(head, new_head)]);
+    }
+
+    let chain = git(
+        repo_root,
+        &[
+            "rev-list",
+            "--reverse",
+            "--parents",
+            &format!("{target}^..HEAD"),
+        ],
+        None,
+        &[],
+    )
+    .map_err(|_| {
+        TuicrError::VcsCommand("The first commit of a repository cannot be renamed".into())
+    })?;
+    let chain: Vec<Vec<&str>> = chain
+        .lines()
+        .map(|line| line.split_whitespace().collect())
+        .collect();
+    if chain.first().and_then(|commit| commit.first()) != Some(&target.as_str()) {
+        return Err(TuicrError::VcsCommand(
+            "That commit is not on the current branch".into(),
+        ));
+    }
+    if chain.iter().any(|commit| commit.len() > 2) {
+        return Err(TuicrError::VcsCommand(
+            "Cannot rename across a merge commit".into(),
+        ));
+    }
+
+    let sign = git(
+        repo_root,
+        &["config", "--type=bool", "commit.gpgsign"],
+        None,
+        &[],
+    )
+    .is_ok_and(|value| value == "true");
+
+    let mut rewritten: Vec<(String, String)> = Vec::new();
+    for commit in &chain {
+        let (old, parent) = (commit[0], commit[1]);
+        let parent = rewritten
+            .iter()
+            .find(|(from, _)| from == parent)
+            .map_or(parent, |(_, to)| to.as_str())
+            .to_string();
+        let tree = git(
+            repo_root,
+            &["rev-parse", &format!("{old}^{{tree}}")],
+            None,
+            &[],
+        )?;
+        let author = git(
+            repo_root,
+            &["log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", old],
+            None,
+            &[],
+        )?;
+        let mut author = author.split('\0');
+        let (name, email, date) = (
+            author.next().unwrap_or_default(),
+            author.next().unwrap_or_default(),
+            author.next().unwrap_or_default(),
+        );
+        let commit_message = if old == target {
+            message.clone()
+        } else {
+            raw_message(repo_root, old)?
+        };
+        let mut args = vec!["commit-tree", tree.as_str(), "-p", parent.as_str()];
+        if sign {
+            args.push("-S");
+        }
+        args.extend(["-F", "-"]);
+        let new = git(
+            repo_root,
+            &args,
+            Some(&commit_message),
+            &[
+                ("GIT_AUTHOR_NAME", name),
+                ("GIT_AUTHOR_EMAIL", email),
+                ("GIT_AUTHOR_DATE", date),
+            ],
+        )?;
+        rewritten.push((old.to_string(), new));
+    }
+
+    let new_head = rewritten
+        .last()
+        .map(|(_, new)| new.clone())
+        .unwrap_or_default();
+    git(
+        repo_root,
+        &[
+            "update-ref",
+            "-m",
+            "tuicr: rename commit",
+            "HEAD",
+            &new_head,
+            &head,
+        ],
+        None,
+        &[],
+    )?;
+    Ok(rewritten)
 }
 
 #[cfg(test)]

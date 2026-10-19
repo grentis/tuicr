@@ -1596,6 +1596,11 @@ pub struct App {
     pub commit_draft: Option<CommitDraft>,
     /// A commit running in the background; drained by `poll_commit_events`.
     pub commit_rx: Option<std::sync::mpsc::Receiver<CommitEvent>>,
+    /// The commit being renamed and its draft; kept until the rename succeeds or another commit is
+    /// picked.
+    pub rename_draft: Option<(String, CommitDraft)>,
+    /// True while the commit pop-up renames a commit rather than commits.
+    pub dialog_renaming: bool,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;

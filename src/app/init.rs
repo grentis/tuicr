@@ -663,6 +663,8 @@ impl App {
             git_file_states: HashMap::new(),
             commit_draft: None,
             commit_rx: None,
+            rename_draft: None,
+            dialog_renaming: false,
             commit_selection_start: CommitSelectionStart::default(),
             initial_comments_visibility: None,
             commit_diff_cache: HashMap::new(),

@@ -502,15 +502,15 @@ pub fn handle_commit_message_key(app: &mut App, key: crossterm::event::KeyEvent)
     use crossterm::event::{KeyCode, KeyModifiers};
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
-    let Some(draft) = app.commit_draft.as_mut() else {
+    let Some(draft) = app.dialog_draft_mut() else {
         app.close_commit_dialog();
         return;
     };
 
     match key.code {
         KeyCode::Esc => app.close_commit_dialog(),
-        KeyCode::Char('s') if ctrl => app.submit_commit(),
-        KeyCode::Enter if draft.field == app::CommitField::Title => app.submit_commit(),
+        KeyCode::Char('s') if ctrl => app.submit_commit_dialog(),
+        KeyCode::Enter if draft.field == app::CommitField::Title => app.submit_commit_dialog(),
         KeyCode::Enter => insert_into_commit_field(draft, "\n"),
         KeyCode::Char('j') if ctrl && draft.field == app::CommitField::Description => {
             insert_into_commit_field(draft, "\n")
@@ -553,7 +553,7 @@ pub fn handle_commit_message_key(app: &mut App, key: crossterm::event::KeyEvent)
 
 /// Paste into the focused box; line breaks become spaces in the one-line title.
 pub fn handle_commit_message_paste(app: &mut App, text: &str) {
-    let Some(draft) = app.commit_draft.as_mut() else {
+    let Some(draft) = app.dialog_draft_mut() else {
         return;
     };
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -1655,6 +1655,8 @@ pub fn handle_commit_selector_action(app: &mut App, action: Action) {
         Action::ExitMode => {
             app.focused_panel = FocusedPanel::Diff;
         }
+        // With git actions on, `e` on a commit renames it.
+        Action::EditFile if app.git_actions_active() => app.open_rename_dialog(),
         _ => handle_shared_normal_action(app, action),
     }
 }
