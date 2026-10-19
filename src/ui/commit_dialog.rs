@@ -186,3 +186,30 @@ pub(crate) fn wrap_with_cursor(
     }
     (rows, cursor_at)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_wrap_at_breaks_and_width_and_place_the_cursor() {
+        let (rows, cursor) = wrap_with_cursor("abcdef\ngh", 4, 4);
+        assert_eq!(rows, ["abcd", "ef", "gh"]);
+        assert_eq!(cursor, (1, 0));
+
+        let (_, cursor) = wrap_with_cursor("abcdef\ngh", 9, 4);
+        assert_eq!(cursor, (2, 2));
+
+        let (rows, cursor) = wrap_with_cursor("", 0, 4);
+        assert_eq!(rows, [""]);
+        assert_eq!(cursor, (0, 0));
+    }
+
+    #[test]
+    fn should_scroll_a_long_title_to_keep_the_cursor_in_view() {
+        assert_eq!(scroll_line("short", 5, 10), ("short".to_string(), 5));
+        let (shown, col) = scroll_line("0123456789", 10, 4);
+        assert_eq!(col, 3);
+        assert!(shown.starts_with("789"), "{shown}");
+    }
+}
