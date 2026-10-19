@@ -2378,6 +2378,41 @@ comment_type_prefix = false
     }
 
     #[test]
+    fn should_parse_the_agent_send_command() {
+        let outcome = parse_config(
+            r#"[agent]
+send_command = 'herdr pane run "$TUICR_AGENT" "/tuicr-connect comments $TUICR_SESSION"'
+"#,
+        );
+
+        let agent = outcome
+            .config
+            .as_ref()
+            .and_then(|cfg| cfg.agent.clone())
+            .expect("agent section should parse");
+        assert_eq!(
+            agent.send_command.as_deref(),
+            Some(r#"herdr pane run "$TUICR_AGENT" "/tuicr-connect comments $TUICR_SESSION""#)
+        );
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn should_leave_sending_off_for_a_blank_send_command() {
+        let outcome = parse_config("[agent]\nsend_command = \"  \"\nwhen = 1\n");
+
+        assert!(outcome.config.as_ref().unwrap().agent.is_none());
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("'agent.when'")),
+            "{:?}",
+            outcome.warnings
+        );
+    }
+
+    #[test]
     fn should_parse_extended_comments_from_the_forge_section() {
         let outcome = parse_config("[forge]\nextended_comments = true\n");
         let forge = outcome
