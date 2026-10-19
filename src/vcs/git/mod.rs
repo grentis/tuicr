@@ -1,4 +1,5 @@
 mod cli;
+pub mod commit;
 pub mod context;
 pub mod diff;
 mod libgit2;
