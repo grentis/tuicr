@@ -165,6 +165,22 @@ impl ReviewStore {
         storage::wait_on_session_in_dir(&reviews_dir, session_ref.path(), waiter)
     }
 
+    /// Stamp the agent's read of this session on the tuicr that has it open.
+    pub(crate) fn mark_agent_read(&self, session_ref: &SessionRef) -> Result<()> {
+        let reviews_dir = self.reviews_dir()?;
+        storage::mark_agent_read_in_dir(&reviews_dir, session_ref.path())
+    }
+
+    /// Record `tuicr review done`; false when no running tuicr has it open.
+    pub(crate) fn mark_agent_done(
+        &self,
+        session_ref: &SessionRef,
+        message: Option<&str>,
+    ) -> Result<bool> {
+        let reviews_dir = self.reviews_dir()?;
+        storage::mark_agent_done_in_dir(&reviews_dir, session_ref.path(), message)
+    }
+
     /// Register `agent` on the running tuicr that has this session open.
     /// Returns false when no running tuicr has it open.
     pub fn attach_agent(&self, session_ref: &SessionRef, agent: &str) -> Result<bool> {

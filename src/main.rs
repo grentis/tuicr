@@ -525,6 +525,7 @@ fn main() -> anyhow::Result<()> {
         needs_redraw |= app.poll_pr_comment_events();
         needs_redraw |= app.poll_commit_events();
         needs_redraw |= app.poll_agent_send_events();
+        needs_redraw |= app.poll_agent_done();
         app.poll_active_session_heartbeat();
         needs_redraw |= app.poll_persisted_session_changes();
         needs_redraw |= app.poll_diff_watch_changes();

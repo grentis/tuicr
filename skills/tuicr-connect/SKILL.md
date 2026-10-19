@@ -79,8 +79,9 @@ It returns, in order, every thread whose last message is not yours: each
 thread's first comment, then its replies (they carry `reply_to`, the first
 comment's id). Earlier messages are context: yours say what you already did;
 the messages after your last reply say what is wanted now. Handle all of
-them, not only the last. An empty list means nothing is waiting: say so in
-one line and stop.
+them, not only the last. An empty list means nothing is waiting: report done
+(step 6's command, `--message "nothing waiting"`), say so in one line, and
+stop.
 
 `location` is `path:line` (`[old]` for a removed line), `path` for a file
 comment, `review` for a review-level one. Read the code there before acting.
@@ -146,7 +147,13 @@ Done, 3 threads answered:
 - `review` aa: unclear, asked what should change
 ```
 
-It mirrors your replies in the threads. The user sees them, with your code
-changes, after `:e` in tuicr. When the restarted wait later finishes for a
+Then tell tuicr, with the same summary:
+
+```bash
+tuicr review done --repo <repo> --session <session> --message "3 threads answered"
+```
+
+It shows in tuicr's status bar. The recap mirrors your replies in the threads;
+the user sees them, with your code changes, after `:e` in tuicr. When the restarted wait later finishes for a
 `:submit` you already handled in step 5, step 1 finds nothing: say so in one
 line.
