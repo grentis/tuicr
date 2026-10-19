@@ -314,7 +314,7 @@ In command mode,
 | `:commits` (`:targets`) | Select commits to review |
 | `:prs` | Open the review target selector on Pull Requests |
 | `:sessions` (`:reviews`) | Resume a saved review for this checkout |
-| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft, plus Replies only with `[forge] extended_comments`) |
+| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft, plus Replies only with `[forge] extended_comments`). In a local review with `[agent] send_command` set: tell the attached agent there is something for it. See [Agents](REVIEW_CLI.md#agents) |
 | `:submit comment` | Submit a Comment review |
 | `:submit approve` | Submit an Approve review |
 | `:submit request-changes` | Submit a Request-changes review |

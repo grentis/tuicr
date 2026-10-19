@@ -916,6 +916,10 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
             ),
         ]),
         Line::from(vec![
+            Span::raw("                 "),
+            Span::raw("In a local review: tell the attached agent ([agent] send_command)"),
+        ]),
+        Line::from(vec![
             Span::styled(
                 "  :submit comment",
                 Style::default().add_modifier(Modifier::BOLD),
