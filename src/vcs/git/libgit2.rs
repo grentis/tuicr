@@ -215,6 +215,15 @@ impl VcsBackend for Libgit2Backend {
     fn path_change_status(&self, path: &Path) -> Result<crate::vcs::VcsChangeStatus> {
         staging::path_change_status(&self.repo, path)
     }
+
+    fn discard_file(&self, path: &Path) -> Result<()> {
+        let workdir = self.repo.workdir().ok_or_else(|| {
+            crate::error::TuicrError::UnsupportedOperation(
+                "A bare repository has no working tree".into(),
+            )
+        })?;
+        staging::discard_file(workdir, path)
+    }
 }
 
 #[cfg(test)]

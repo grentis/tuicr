@@ -842,6 +842,17 @@ fn main() -> anyhow::Result<()> {
                             app.pending_count = None;
                             continue;
                         }
+                        // With git actions on, `d` in the file tree discards instead of starting
+                        // `dd` (delete comment).
+                        Action::PendingDCommand
+                            if app.input_mode == InputMode::Normal
+                                && app.focused_panel == app::FocusedPanel::FileList
+                                && !app.file_tree_prompt_editing()
+                                && app.git_actions_active() =>
+                        {
+                            handler::handle_file_list_action(&mut app, Action::DiscardChanges);
+                            continue;
+                        }
                         Action::PendingDCommand => {
                             pending_d = true;
                             app.pending_count = None;

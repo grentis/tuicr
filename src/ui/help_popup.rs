@@ -570,6 +570,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  d         ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(
+                "In the file tree: discard uncommitted changes of file or directory, after asking (git_actions, --branch)",
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  R         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
