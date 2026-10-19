@@ -5,6 +5,7 @@ struct PrDisplayOptions {
     show_checks: bool,
     show_comments: bool,
     comments_visibility: Option<crate::forge::remote_comments::PrCommentsVisibility>,
+    local_diff_fallback: bool,
 }
 
 impl App {
@@ -29,6 +30,7 @@ impl App {
                     show_checks: options.show_pr_checks,
                     show_comments: options.show_pr_comments,
                     comments_visibility: options.pr_comments_visibility,
+                    local_diff_fallback: options.local_diff_fallback,
                 },
             );
         }
@@ -861,6 +863,7 @@ impl App {
                 show_checks: false,
                 show_comments: true,
                 comments_visibility: None,
+                local_diff_fallback: false,
             },
         )
     }
@@ -960,6 +963,7 @@ impl App {
             parsed,
             local_checkout_for_target.as_deref(),
             highlighter,
+            display_options.local_diff_fallback,
         )?;
         // Seed before the persisted-session restore, which replaces the
         // fresh session wholesale, so a saved visibility always wins.

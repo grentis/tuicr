@@ -364,6 +364,12 @@ where
         self.local_checkout.clone()
     }
 
+    /// GitHub refuses a diff over 300 files (HTTP 406, `too_large`).
+    fn is_diff_too_large(&self, error: &TuicrError) -> bool {
+        matches!(error, TuicrError::Forge(message)
+            if message.contains("too_large") || message.contains("maximum number of files"))
+    }
+
     fn list_pull_request_commits(&self, pr: &PullRequestDetails) -> Result<Vec<PullRequestCommit>> {
         // GitHub paginates `pulls/<num>/commits` at 250 commits per page (max
         // per_page=100; PRs are capped at 250 commits via the API). Paginate
