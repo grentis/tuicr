@@ -299,6 +299,7 @@ fn main() -> anyhow::Result<()> {
             app.username = tuicr::config::resolved_username(
                 config_outcome.config.as_ref(),
                 app.forge_config.extended_comments,
+                Some(&app.vcs_info.root_path),
             );
             app
         }

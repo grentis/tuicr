@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::cli::{LineSideArg, ReviewCommand};
 use crate::config;
 use crate::error::{Result, TuicrError};
-use crate::model::comment::{self, CommentLifecycleState};
+use crate::model::comment::CommentLifecycleState;
 use crate::model::{ClearScope, Comment, CommentType, LineRange, LineSide, ReviewSession};
 use crate::persistence::storage;
 use crate::review_store::{
@@ -27,6 +27,31 @@ fn run_with_writer(command: ReviewCommand, out: &mut impl Write) -> Result<()> {
         ReviewCommand::List { repo, all } => list_sessions(&repo, all, out),
         ReviewCommand::Add {
             session,
+            repo,
+            comment_type,
+            side,
+            username,
+            reply_to: Some(parent_id),
+            content,
+            ..
+        } => add_reply(
+            &session,
+            &repo,
+            &parent_id,
+            AddCommentOptions {
+                input: None,
+                comment_type,
+                file: None,
+                line: None,
+                end_line: None,
+                side,
+                username,
+                content,
+            },
+            out,
+        ),
+        ReviewCommand::Add {
+            session,
             input,
             repo,
             comment_type,
@@ -35,6 +60,7 @@ fn run_with_writer(command: ReviewCommand, out: &mut impl Write) -> Result<()> {
             end_line,
             side,
             username,
+            reply_to: None,
             content,
         } => add_comment(
             &session,
@@ -51,7 +77,11 @@ fn run_with_writer(command: ReviewCommand, out: &mut impl Write) -> Result<()> {
             },
             out,
         ),
-        ReviewCommand::Comments { session, repo } => show_comments(&session, &repo, out),
+        ReviewCommand::Comments {
+            session,
+            repo,
+            needs_reply,
+        } => show_comments(&session, &repo, needs_reply.as_deref(), out),
         ReviewCommand::Delete {
             session,
             comment_id,
@@ -165,6 +195,44 @@ struct AttachOutput {
     agent: String,
 }
 
+/// `tuicr review add --reply-to`: answer a local comment in its thread.
+fn add_reply(
+    session: &str,
+    repo: &Path,
+    parent_id: &str,
+    options: AddCommentOptions,
+    out: &mut impl Write,
+) -> Result<()> {
+    let store = ReviewStore::new();
+    let session_ref = resolve_session_ref(&store, repo, session)?;
+    let review = store.get_review(&session_ref)?;
+    if review.pr_session_key.is_some() {
+        return Err(TuicrError::InvalidInput(format!(
+            "'{session}' is a PR session; --reply-to answers local comments only"
+        )));
+    }
+    let content = options
+        .content
+        .ok_or_else(|| TuicrError::InvalidInput("a reply needs its text".to_string()))?;
+    let config = config::load_config()
+        .ok()
+        .and_then(|outcome| outcome.config);
+    let comment_type = CommentType::from_id(&options.comment_type);
+    if let Some(warning) = unknown_comment_type_warning(&comment_type, config.as_ref()) {
+        eprintln!("{warning}");
+    }
+    let author = resolve_cli_author(options.username, config.as_ref(), &review.repo_path);
+    let reply = Comment::new(content, comment_type, None).with_author(author);
+    let updated = store.add_reply(&session_ref, parent_id, reply)?;
+    let output = collect_comments(&updated.0)
+        .into_iter()
+        .find(|comment| comment.id == updated.1.id)
+        .ok_or_else(|| TuicrError::InvalidInput("the stored reply went missing".to_string()))?;
+    serde_json::to_writer_pretty(&mut *out, &output)?;
+    writeln!(out)?;
+    Ok(())
+}
+
 struct AddCommentOptions {
     input: Option<String>,
     comment_type: String,
@@ -194,7 +262,8 @@ fn add_comment(
     if let Some(warning) = unknown_comment_type_warning(&comment_type, config.as_ref()) {
         eprintln!("{warning}");
     }
-    let author = resolve_cli_author(request_parts.username, config.as_ref());
+    let repo_path = store.get_review(&session_ref)?.repo_path;
+    let author = resolve_cli_author(request_parts.username, config.as_ref(), &repo_path);
     let comment = store.add_comment(
         &session_ref,
         AddCommentRequest {
@@ -223,18 +292,22 @@ struct AddRequestParts {
 /// Priority: explicit `--username` / JSON `username` ► config `username` ►
 /// `Comment::DEFAULT_AUTHOR`. Trims whitespace so `--username " "` doesn't
 /// produce an awkward all-whitespace badge.
-fn resolve_cli_author(explicit: Option<String>, config: Option<&config::AppConfig>) -> String {
+fn resolve_cli_author(
+    explicit: Option<String>,
+    config: Option<&config::AppConfig>,
+    repo: &Path,
+) -> String {
     if let Some(name) = explicit.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         return name.to_string();
     }
-    if let Some(name) = config
-        .and_then(|cfg| cfg.username.as_deref())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        return name.to_string();
-    }
-    comment::DEFAULT_AUTHOR.to_string()
+    config::resolved_username(config, git_fallback(config), Some(repo))
+}
+
+/// Whether "you" may fall back to git's `user.name`, as in the TUI.
+fn git_fallback(config: Option<&config::AppConfig>) -> bool {
+    config
+        .and_then(|cfg| cfg.forge.as_ref())
+        .is_some_and(|forge| forge.extended_comments)
 }
 
 /// Warn when `--type` names a type that no `comment_types` entry defines.
@@ -457,11 +530,19 @@ fn line_side_arg_to_model(side: LineSideArg) -> LineSide {
     }
 }
 
-fn show_comments(session: &str, repo: &Path, out: &mut impl Write) -> Result<()> {
+fn show_comments(
+    session: &str,
+    repo: &Path,
+    needs_reply: Option<&str>,
+    out: &mut impl Write,
+) -> Result<()> {
     let store = ReviewStore::new();
     let session_ref = resolve_session_ref(&store, repo, session)?;
     let session = store.get_review(&session_ref)?;
-    let comments = collect_comments(&session);
+    let mut comments = collect_comments(&session);
+    if let Some(agent) = needs_reply {
+        comments = threads_waiting_on(comments, agent);
+    }
     serde_json::to_writer_pretty(&mut *out, &comments)?;
     writeln!(out)?;
     Ok(())
@@ -603,6 +684,26 @@ fn collect_comments(session: &ReviewSession) -> Vec<CommentOutput> {
     comments
 }
 
+/// Whole threads whose last message is not `agent`'s: its reply answers a
+/// thread, anyone's next message reopens it. `comments` holds every thread's
+/// messages, in order.
+fn threads_waiting_on(comments: Vec<CommentOutput>, agent: &str) -> Vec<CommentOutput> {
+    let thread = |comment: &CommentOutput| {
+        comment
+            .reply_to
+            .clone()
+            .unwrap_or_else(|| comment.id.clone())
+    };
+    let mut last_author = std::collections::HashMap::new();
+    for comment in &comments {
+        last_author.insert(thread(comment), comment.author.clone());
+    }
+    comments
+        .into_iter()
+        .filter(|comment| last_author.get(&thread(comment)).map(String::as_str) != Some(agent))
+        .collect()
+}
+
 fn line_location(path: &str, start_line: u32, end_line: u32, side: Option<LineSide>) -> String {
     let line = if start_line == end_line {
         start_line.to_string()
@@ -694,6 +795,9 @@ struct CommentOutput {
     lifecycle_state: &'static str,
     created_at: String,
     content: String,
+    /// The first comment of the thread this one answers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_to: Option<String>,
 }
 
 impl CommentOutput {
@@ -744,6 +848,7 @@ impl CommentOutput {
             lifecycle_state: lifecycle_id(comment.lifecycle_state),
             created_at: comment.created_at.to_rfc3339(),
             content: comment.content.clone(),
+            reply_to: comment.reply_to.clone(),
         }
     }
 }
@@ -1060,7 +1165,13 @@ mod tests {
         assert_eq!(comments[0].comment_type, "issue");
         assert_eq!(comments[0].author, "review-agent");
 
-        show_comments(&session_ref.path().display().to_string(), &repo, &mut out).unwrap();
+        show_comments(
+            &session_ref.path().display().to_string(),
+            &repo,
+            None,
+            &mut out,
+        )
+        .unwrap();
         let text = String::from_utf8(out).unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value[0]["comment_type"], "issue");

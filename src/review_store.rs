@@ -134,6 +134,26 @@ impl ReviewStore {
         storage::delete_inactive_session_in_dir(session_ref.path(), &reviews_dir)
     }
 
+    /// Add `reply` to the thread of local comment `parent_id`. Returns the
+    /// saved session and the stored reply.
+    pub fn add_reply(
+        &self,
+        session_ref: &SessionRef,
+        parent_id: &str,
+        reply: Comment,
+    ) -> Result<(ReviewSession, Comment)> {
+        let reviews_dir = self.reviews_dir()?;
+        let (session, (_path, stored)) =
+            storage::update_session_in_dir(session_ref.path(), &reviews_dir, |session| {
+                session.add_reply(parent_id, reply).ok_or_else(|| {
+                    TuicrError::InvalidInput(format!(
+                        "no comment with id '{parent_id}' in this session"
+                    ))
+                })
+            })?;
+        Ok((session, stored))
+    }
+
     /// Register `agent` on the running tuicr that has this session open.
     /// Returns false when no running tuicr has it open.
     pub fn attach_agent(&self, session_ref: &SessionRef, agent: &str) -> Result<bool> {

@@ -95,6 +95,33 @@ terminal pane for instance; tuicr only hands it over as `TUICR_AGENT`. A new
 attach replaces the previous one. Attaching needs a running tuicr with the
 session open, and refuses PR sessions: agents act on local reviews only.
 
+### Replies
+
+In a local review a comment can be answered, in the TUI with `c` on it (with
+`[forge] extended_comments`), or by an agent:
+
+```bash
+tuicr review add --session agavra/tuicr@main/branch --reply-to <id> \
+  --username ai-agent "Renamed in 3f2a1c"
+```
+
+`--reply-to` takes a comment id from `review comments`. The reply joins that
+comment's thread (replying to a reply answers the same thread), on its line
+and side, and carries the thread's first comment as `reply_to` in the output.
+It cannot be combined with `--target-file`, `--line` or `--input`, and is
+refused for PR sessions.
+
+A thread waits on the agent while its last message is someone else's.
+`--needs-reply <AGENT>` lists only those threads, each with all its messages
+in order, so an agent knows exactly what is left:
+
+```bash
+tuicr review comments --session agavra/tuicr@main/branch --needs-reply ai-agent
+```
+
+The agent's reply (with the same `--username`) answers the thread; anyone's
+next message reopens it. Its own comments never come back to it.
+
 `tuicr review list` shows, on a session a tuicr has open, that tuicr's
 process id as `pid` and the attached id as `agent`.
 A running tuicr refreshes its registration every ten minutes, so one left open
