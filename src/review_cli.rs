@@ -1228,6 +1228,91 @@ mod tests {
         storage::set_test_reviews_dir(None);
     }
 
+    #[test]
+    fn should_wait_until_the_session_is_submitted() {
+        // given: a local session a tuicr (this process) has open
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let session = test_session(temp.path().join("repo"));
+        let path = storage::save_session(&session).unwrap();
+        storage::mark_session_active(&session, &path).unwrap();
+
+        // when: `:submit` lands while the agent waits
+        let submit = std::thread::spawn({
+            let reviews = reviews.clone();
+            move || {
+                std::thread::sleep(WAIT_POLL * 3);
+                storage::notify_waiter_for_pid_in_dir(&reviews, std::process::id()).unwrap()
+            }
+        });
+        let mut out = Vec::new();
+        wait_for_submit(&path.display().to_string(), Path::new("."), &mut out).unwrap();
+
+        // then: the wait returns with the session
+        assert!(submit.join().unwrap(), "the submit reached a waiter");
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert!(value["submitted_at"].is_string());
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
+    fn should_stop_waiting_when_the_tuicr_closes() {
+        // given: a local session a tuicr (this process) has open
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let session = test_session(temp.path().join("repo"));
+        let path = storage::save_session(&session).unwrap();
+        storage::mark_session_active(&session, &path).unwrap();
+
+        // when: the tuicr quits while the agent waits
+        let quit = std::thread::spawn({
+            let reviews = reviews.clone();
+            move || {
+                std::thread::sleep(WAIT_POLL * 3);
+                storage::clear_active_session_for_pid_in_dir(&reviews).unwrap();
+            }
+        });
+        let err = wait_for_submit(&path.display().to_string(), Path::new("."), &mut Vec::new())
+            .unwrap_err();
+        quit.join().unwrap();
+
+        // then
+        assert!(err.to_string().contains("was closed"), "{err}");
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
+    fn should_refuse_to_wait_on_a_pr_or_unopened_session() {
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let store = ReviewStore::with_reviews_dir(reviews);
+        let pr = save_pr_session(&store);
+        let local = storage::save_session(&test_session(temp.path().join("repo"))).unwrap();
+
+        let in_pr = wait_for_submit(
+            &pr.path().display().to_string(),
+            Path::new("."),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        let unopened = wait_for_submit(
+            &local.display().to_string(),
+            Path::new("."),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(in_pr.to_string().contains("local reviews only"), "{in_pr}");
+        assert!(
+            unopened.to_string().contains("no running tuicr"),
+            "{unopened}"
+        );
+        storage::set_test_reviews_dir(None);
+    }
+
     fn save_pr_session(store: &ReviewStore) -> SessionRef {
         use crate::forge::traits::{ForgeRepository, PrSessionKey};
 
