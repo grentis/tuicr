@@ -35,6 +35,7 @@ const COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec::new(&["open"], CommandKind::Open),
     CommandSpec::new(&["expand"], CommandKind::Expand),
     CommandSpec::new(&["uncommitted"], CommandKind::ToggleOnlyUncommitted),
+    CommandSpec::new(&["commit"], CommandKind::Commit),
     CommandSpec::new(
         &["clear"],
         CommandKind::Clear(ClearScope::CommentsAndReviewed),
@@ -147,6 +148,7 @@ enum CommandKind {
     Open,
     Expand,
     ToggleOnlyUncommitted,
+    Commit,
     Clear(ClearScope),
     Help,
     MessageDetails,
@@ -492,6 +494,117 @@ pub fn handle_export_and_quit(app: &mut App) {
     } else {
         app.should_quit = true;
     }
+}
+
+/// Commit pop-up keys: Enter in the title or Ctrl-S commits, Enter in the description adds a line,
+/// Tab/Shift-Tab switch boxes, Esc closes and keeps the draft.
+pub fn handle_commit_message_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let Some(draft) = app.commit_draft.as_mut() else {
+        app.close_commit_dialog();
+        return;
+    };
+
+    match key.code {
+        KeyCode::Esc => app.close_commit_dialog(),
+        KeyCode::Char('s') if ctrl => app.submit_commit(),
+        KeyCode::Enter if draft.field == app::CommitField::Title => app.submit_commit(),
+        KeyCode::Enter => insert_into_commit_field(draft, "\n"),
+        KeyCode::Char('j') if ctrl && draft.field == app::CommitField::Description => {
+            insert_into_commit_field(draft, "\n")
+        }
+        KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('\t') => {
+            draft.field = match draft.field {
+                app::CommitField::Title => app::CommitField::Description,
+                app::CommitField::Description => app::CommitField::Title,
+            };
+        }
+        KeyCode::Up => commit_cursor_vertical(draft, false),
+        KeyCode::Down => commit_cursor_vertical(draft, true),
+        _ => {
+            let (text, cursor) = draft.active_mut();
+            match key.code {
+                KeyCode::Backspace if ctrl || alt => *cursor = delete_word_before(text, *cursor),
+                KeyCode::Char('w') if ctrl => *cursor = delete_word_before(text, *cursor),
+                KeyCode::Backspace => *cursor = delete_char_before(text, *cursor),
+                KeyCode::Delete => {
+                    let next = next_char_boundary(text, *cursor);
+                    text.replace_range(*cursor..next, "");
+                }
+                KeyCode::Left if ctrl || alt => *cursor = comment_word_left(text, *cursor),
+                KeyCode::Right if ctrl || alt => *cursor = comment_word_right(text, *cursor),
+                KeyCode::Left => *cursor = prev_char_boundary(text, *cursor),
+                KeyCode::Right => *cursor = next_char_boundary(text, *cursor),
+                KeyCode::Home => *cursor = comment_line_start(text, *cursor),
+                KeyCode::Char('a') if ctrl => *cursor = comment_line_start(text, *cursor),
+                KeyCode::End => *cursor = comment_line_end(text, *cursor),
+                KeyCode::Char('e') if ctrl => *cursor = comment_line_end(text, *cursor),
+                KeyCode::Char(c) if !ctrl && !alt => {
+                    let mut buf = [0u8; 4];
+                    insert_into_commit_field(draft, c.encode_utf8(&mut buf));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Paste into the focused box; line breaks become spaces in the one-line title.
+pub fn handle_commit_message_paste(app: &mut App, text: &str) {
+    let Some(draft) = app.commit_draft.as_mut() else {
+        return;
+    };
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    insert_into_commit_field(draft, &normalized);
+}
+
+fn insert_into_commit_field(draft: &mut app::CommitDraft, text: &str) {
+    let single_line;
+    let text = if draft.field == app::CommitField::Title {
+        single_line = text.replace('\n', " ");
+        single_line.as_str()
+    } else {
+        text
+    };
+    let (buffer, cursor) = draft.active_mut();
+    buffer.insert_str(*cursor, text);
+    *cursor += text.len();
+}
+
+/// Up/Down: move between description lines, keeping the column, and across boxes at their edges.
+fn commit_cursor_vertical(draft: &mut app::CommitDraft, down: bool) {
+    match (draft.field, down) {
+        (app::CommitField::Title, true) => {
+            draft.field = app::CommitField::Description;
+            return;
+        }
+        (app::CommitField::Title, false) => return,
+        _ => {}
+    }
+    let text = &draft.description;
+    let cursor = draft.description_cursor.min(text.len());
+    let line_start = comment_line_start(text, cursor);
+    let column = text[line_start..cursor].chars().count();
+    let target_start = if down {
+        let line_end = comment_line_end(text, cursor);
+        if line_end >= text.len() {
+            return;
+        }
+        line_end + 1
+    } else {
+        if line_start == 0 {
+            draft.field = app::CommitField::Title;
+            return;
+        }
+        comment_line_start(text, line_start - 1)
+    };
+    let target_end = comment_line_end(text, target_start);
+    draft.description_cursor = text[target_start..target_end]
+        .char_indices()
+        .nth(column)
+        .map_or(target_end, |(offset, _)| target_start + offset);
 }
 
 fn comment_line_start(buffer: &str, cursor: usize) -> usize {
@@ -939,6 +1052,13 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
         CommandKind::ToggleOnlyUncommitted => {
             app.toggle_only_uncommitted();
             CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::Commit => {
+            // As for Help: leave command mode first so the post-dispatch cleanup keeps the pop-up's
+            // mode.
+            app.exit_command_mode();
+            app.open_commit_dialog();
+            CommandAfterDispatch::KeepMode
         }
         CommandKind::Clear(scope) => {
             app.clear_comments(scope);

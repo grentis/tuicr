@@ -617,6 +617,9 @@ pub enum InputMode {
     /// a live preview immediately; `/` opens a filter draft the same way the
     /// file tree's `i`/`e`/`/` prompts work.
     ThemePicker,
+    /// The commit pop-up (`:commit`, git actions): typing goes to its title
+    /// or description.
+    CommitMessage,
 }
 
 /// CommandCompletionState keeps one Tab-completion run anchored to the text
@@ -1078,6 +1081,7 @@ pub struct ViewedSyncWorker {
 }
 
 pub use branch::default_branch_base;
+pub use commit_dialog::{CommitDraft, CommitEvent, CommitField};
 pub use git_actions::GitFileState;
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
 pub use thread_reply::ThreadReplyTarget;
@@ -1588,6 +1592,10 @@ pub struct App {
     /// Staged/unstaged state of each file with uncommitted changes, while git actions are on.
     /// Absent means none.
     pub git_file_states: HashMap<PathBuf, GitFileState>,
+    /// The commit pop-up's draft; kept on close until a commit succeeds.
+    pub commit_draft: Option<CommitDraft>,
+    /// A commit running in the background; drained by `poll_commit_events`.
+    pub commit_rx: Option<std::sync::mpsc::Receiver<CommitEvent>>,
     /// Which commits are selected when a multi-commit review first opens.
     pub commit_selection_start: CommitSelectionStart,
     /// Configured `pr_comments_visibility` default for fresh PR sessions;
@@ -2047,6 +2055,7 @@ mod coloring;
 mod comment_style;
 mod comment_vim;
 mod comments;
+mod commit_dialog;
 mod commits;
 mod diff_load;
 mod editor_target;

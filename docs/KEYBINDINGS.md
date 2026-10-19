@@ -160,6 +160,7 @@ considers files that pass the active filters.
 | `<leader>n` | Toggle relative line numbers (also `:set relativenumber!`) |
 | `<leader>o` | Open the PR in the default browser (PR mode, also `:open`) |
 | `<leader>r` | Hide or show files marked reviewed (also `:reviewed`) |
+| `<leader>g` | Commit what is staged (`git_actions`, `--branch`; also `:commit`) |
 | `<leader>x` | Show the whole current file, or only its changes again (also `:expand`) |
 | `Enter` | Select file (when file list is focused) |
 
@@ -307,6 +308,7 @@ In command mode,
 | `:open` | Open the PR in the default browser (PR mode) |
 | `:summary` | Show all pending local-draft comments; `j`/`k` select and `Enter` jumps |
 | `:diff` | Toggle diff view (unified / side-by-side) |
+| `:commit` | With `git_actions` in a `--branch` review: open the commit pop-up for what is staged (also `<leader>g`) |
 | `:uncommitted` | With `git_actions` in a `--branch` review: show only the files with uncommitted changes, or all files again |
 | `:expand` | Show the whole current file by opening every hidden gap around its changes; run it again to show only the changes. A partly opened file is opened fully first. Also `<leader>x` |
 | `:theme` | Open the runtime theme picker (live preview; `/` filters, `Enter` applies and saves, `Esc` reverts) |
@@ -382,6 +384,25 @@ Gitea requires a review summary for `request-changes` and `draft`, and for `comm
 are no inline comments; inline comments alone do not satisfy it. GitLab `draft` creates draft
 notes that the author publishes from GitLab's own "Submit review" UI. Gerrit `draft` stores draft
 comments that the author publishes from Gerrit's Reply UI.
+
+### Committing
+
+With `git_actions = true` in a `--branch` review, `:commit` (or `<leader>g`)
+opens a pop-up with a one-line title and a multi-line description, listing
+the staged files below them. It refuses to open when nothing is staged.
+
+| Key | Action |
+|-----|--------|
+| `Enter` (in the title) / `Ctrl-s` | Commit |
+| `Enter` (in the description) | New line |
+| `Tab` / `Shift-Tab`, `↑` / `↓` at the edges | Switch between title and description |
+| `Esc` | Close; what was typed is kept for the next `:commit` |
+
+The commit runs `git commit` with the title, a blank line and the
+description, so commit signing and repository hooks apply as from a shell.
+If git refuses, its error is shown and the draft is kept. Afterwards the new
+commit joins the commit list and its files are marked `·`; the diff and the
+reviewed marks are unchanged.
 
 ### Replying to GitHub threads
 

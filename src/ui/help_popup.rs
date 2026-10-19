@@ -821,6 +821,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :commit   ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "Commit what is staged (git_actions, --branch; {leader}g)"
+            )),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :uncommitted",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
