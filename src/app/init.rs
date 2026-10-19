@@ -600,6 +600,7 @@ impl App {
             quit_warned: false,
             message: None,
             pending_confirm: None,
+            pending_discard: None,
             supports_keyboard_enhancement: false,
             show_file_list: true,
             compact_folders: false,

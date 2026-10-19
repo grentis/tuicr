@@ -1428,6 +1428,20 @@ pub fn handle_mention_key(app: &mut App, key: crossterm::event::KeyEvent) -> boo
 
 /// Handle actions in Confirm mode (Y/N prompts)
 pub fn handle_confirm_action(app: &mut App, action: Action) {
+    if app.pending_confirm == Some(app::ConfirmAction::DiscardChanges) {
+        match action {
+            Action::ConfirmYes => {
+                app.exit_confirm_mode();
+                app.confirm_discard();
+            }
+            Action::ConfirmNo => {
+                app.exit_confirm_mode();
+                app.pending_discard = None;
+            }
+            _ => {}
+        }
+        return;
+    }
     // Only the quit prompts end the session. A Sessions-tab delete answers
     // in place and returns to the selector.
     let quits = app.pending_confirm != Some(app::ConfirmAction::DeleteSession);
@@ -1742,6 +1756,11 @@ pub fn handle_file_list_action(app: &mut App, action: Action) {
         Action::ToggleStaged => match app.get_selected_tree_item() {
             Some(FileTreeItem::File { file_idx, .. }) => app.toggle_staged_for_file_idx(file_idx),
             Some(FileTreeItem::Directory { path, .. }) => app.toggle_staged_for_directory(&path),
+            None => {}
+        },
+        Action::DiscardChanges => match app.get_selected_tree_item() {
+            Some(FileTreeItem::File { file_idx, .. }) => app.request_discard_for_file_idx(file_idx),
+            Some(FileTreeItem::Directory { path, .. }) => app.request_discard_for_directory(&path),
             None => {}
         },
         _ => handle_shared_normal_action(app, action),

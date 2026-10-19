@@ -726,13 +726,15 @@ pub enum ConfirmAction {
     /// Delete the session under the cursor on the Sessions tab. Unlike
     /// `CopyAndQuit` this returns to the selector instead of quitting.
     DeleteSession,
+    /// `d` in the file tree; the paths wait in `App::pending_discard`.
+    DiscardChanges,
 }
 
 impl ConfirmAction {
     /// Mode to return to once the prompt is answered either way.
     pub fn return_mode(self) -> InputMode {
         match self {
-            ConfirmAction::CopyAndQuit => InputMode::Normal,
+            ConfirmAction::CopyAndQuit | ConfirmAction::DiscardChanges => InputMode::Normal,
             ConfirmAction::DeleteSession => InputMode::CommitSelect,
         }
     }
@@ -742,6 +744,7 @@ impl ConfirmAction {
         match self {
             ConfirmAction::CopyAndQuit => "Copy review to clipboard?",
             ConfirmAction::DeleteSession => "Delete this saved review?",
+            ConfirmAction::DiscardChanges => "Discard all changes?",
         }
     }
 }
@@ -1082,7 +1085,7 @@ pub struct ViewedSyncWorker {
 
 pub use branch::default_branch_base;
 pub use commit_dialog::{CommitDraft, CommitEvent, CommitField};
-pub use git_actions::GitFileState;
+pub use git_actions::{DiscardRequest, GitFileState};
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
 pub use thread_reply::ThreadReplyTarget;
 
@@ -1447,6 +1450,8 @@ pub struct App {
     pub quit_warned: bool,
     pub message: Option<Message>,
     pub pending_confirm: Option<ConfirmAction>,
+    /// What `d` in the file tree will discard once confirmed.
+    pub pending_discard: Option<DiscardRequest>,
     pub supports_keyboard_enhancement: bool,
     pub show_file_list: bool,
     pub compact_folders: bool,
