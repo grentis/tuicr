@@ -276,6 +276,15 @@ pub enum ReviewCommand {
         #[arg(long, value_name = "NAME")]
         username: Option<String>,
 
+        /// Reply to the local comment with this id (from `review comments`),
+        /// in its thread on the same line. Local sessions only.
+        #[arg(
+            long = "reply-to",
+            value_name = "ID",
+            conflicts_with_all = ["input", "file", "line", "end_line"]
+        )]
+        reply_to: Option<String>,
+
         /// Comment text.
         #[arg(
             value_name = "COMMENT",
@@ -314,6 +323,11 @@ pub enum ReviewCommand {
         /// `owner/repo`). PR slugs and JSON paths resolve without it.
         #[arg(long, value_name = "PATH|OWNER/REPO", default_value = ".")]
         repo: PathBuf,
+
+        /// Only the threads waiting on AGENT: those whose last message is
+        /// not AGENT's, with their earlier messages.
+        #[arg(long = "needs-reply", value_name = "AGENT")]
+        needs_reply: Option<String>,
     },
 
     /// Delete one local draft comment from a persisted session.
@@ -1264,6 +1278,7 @@ mod tests {
                 end_line: None,
                 side: LineSideArg::Old,
                 username: None,
+                reply_to: None,
                 content: Some("Handle the empty case".to_string()),
             })
         );
@@ -1296,6 +1311,7 @@ mod tests {
                 end_line: None,
                 side: LineSideArg::New,
                 username: None,
+                reply_to: None,
                 content: None,
             })
         );
@@ -1310,6 +1326,7 @@ mod tests {
             Some(ReviewCommand::Comments {
                 session: "session.json".to_string(),
                 repo: PathBuf::from("."),
+                needs_reply: None,
             })
         );
     }
@@ -1323,6 +1340,7 @@ mod tests {
             Some(ReviewCommand::Comments {
                 session: "session.json".to_string(),
                 repo: PathBuf::from("."),
+                needs_reply: None,
             })
         );
     }
