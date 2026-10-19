@@ -826,3 +826,111 @@ fn should_keep_the_draft_when_a_commit_fails() {
             .contains("hook says no")
     );
 }
+
+#[test]
+fn should_move_comments_and_reviewed_views_to_the_renamed_commit_ids() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1", "c2"]);
+    let mut app = git_actions_app(&state);
+    let path = PathBuf::from("wip.py");
+    {
+        let review = app.session.files.get_mut(&path).unwrap();
+        review.add_line_comment(
+            1,
+            Comment::new("on c1".into(), CommentType::from_id("note"), None).with_commit_id("c1"),
+        );
+        review.reviewed_view_hashes.insert("c1..c2".into(), 7);
+        review.content_hash_view = Some("c1..c1".into());
+    }
+    app.rename_draft = Some(("c1".into(), CommitDraft::default()));
+    // Renaming c1 gives c1 and the later c2 new ids.
+    state.lock().unwrap().commit_ids = vec!["n1".into(), "n2".into()];
+
+    app.finish_rename(Ok(vec![
+        ("c1".into(), "n1".into()),
+        ("c2".into(), "n2".into()),
+    ]));
+
+    let review = app.session.files.get(&path).unwrap();
+    assert_eq!(review.line_comments[&1][0].commit_id.as_deref(), Some("n1"));
+    assert_eq!(
+        review.reviewed_view_hashes.keys().collect::<Vec<_>>(),
+        ["n1..n2"]
+    );
+    assert_eq!(review.content_hash_view.as_deref(), Some("n1..n1"));
+    assert_eq!(commit_rows(&app), ["n2", "n1"]);
+    assert!(app.rename_draft.is_none());
+    let message = &app.message.as_ref().unwrap().content;
+    assert!(message.contains("Renamed c1 \u{2192} n1"), "{message}");
+    assert!(message.contains("1 later commit rewritten"), "{message}");
+}
+
+#[test]
+fn should_keep_the_rename_draft_when_renaming_fails() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.rename_draft = Some(("c1".into(), CommitDraft::default()));
+
+    app.finish_rename(Err("Cannot rename across a merge commit".into()));
+
+    assert!(app.rename_draft.is_some());
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("Cannot rename across a merge commit")
+    );
+}
+
+#[test]
+fn should_only_rename_commits_from_the_commit_pane() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.focused_panel = FocusedPanel::CommitSelector;
+    app.commit_list_cursor = app
+        .review_commits
+        .iter()
+        .position(App::is_special_commit)
+        .expect("a staged or unstaged row");
+
+    crate::handler::handle_commit_selector_action(&mut app, crate::input::Action::EditFile);
+
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("Only commits can be renamed")
+    );
+}
+
+#[test]
+fn should_keep_the_commit_and_rename_drafts_apart() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.open_commit_dialog();
+    type_text(&mut app, "New work");
+    app.close_commit_dialog();
+    app.rename_draft = Some((
+        "c1".into(),
+        CommitDraft {
+            title: "Old title".into(),
+            ..CommitDraft::default()
+        },
+    ));
+    app.dialog_renaming = true;
+    app.input_mode = InputMode::CommitMessage;
+
+    assert_eq!(app.dialog_draft().unwrap().title, "Old title");
+    assert_eq!(app.dialog_rename_target(), Some("c1"));
+    app.close_commit_dialog();
+    app.open_commit_dialog();
+
+    assert_eq!(app.dialog_draft().unwrap().title, "New work");
+    assert_eq!(app.dialog_rename_target(), None);
+}
