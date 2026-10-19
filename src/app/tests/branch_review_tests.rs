@@ -1073,3 +1073,112 @@ fn should_submit_a_local_review_to_its_agent_only_when_one_is_configured() {
     assert!(app.agent_send_rx.is_none());
     assert_eq!(app.input_mode, InputMode::Normal);
 }
+
+/// A branch review open in this process with an agent (this process too)
+/// waiting on it, as `tuicr review wait` registers one.
+fn app_with_a_waiting_agent() -> (TestReviewsDir, App, std::path::PathBuf) {
+    use crate::persistence::storage;
+    let reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let app = open(&state, Some("feature")).expect("open branch review");
+    let path = storage::save_session(&app.session).unwrap();
+    storage::mark_session_active(&app.session, &path).unwrap();
+    let dir = storage::get_reviews_dir().unwrap();
+    storage::wait_on_session_in_dir(&dir, &path, std::process::id()).unwrap();
+    (reviews, app, path)
+}
+
+/// The agent reads what waits on it, as `--needs-reply` stamps it.
+fn agent_reads(path: &std::path::Path) {
+    let dir = crate::persistence::storage::get_reviews_dir().unwrap();
+    crate::persistence::storage::mark_agent_read_in_dir(&dir, path).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+}
+
+fn agent_done(path: &std::path::Path, message: &str) {
+    let dir = crate::persistence::storage::get_reviews_dir().unwrap();
+    assert!(
+        crate::persistence::storage::mark_agent_done_in_dir(&dir, path, Some(message)).unwrap()
+    );
+}
+
+/// Run the watch's next check now.
+fn check_agent(app: &mut App) -> bool {
+    if let Some(watch) = app.agent_watch.as_mut() {
+        watch.next_check_at = std::time::Instant::now();
+    }
+    app.poll_agent_done()
+}
+
+#[test]
+fn should_show_the_agents_done_and_stop_watching() {
+    // given: a :submit handed to the waiting agent
+    let (_reviews, mut app, path) = app_with_a_waiting_agent();
+    app.start_submit_action_picker();
+    assert!(app.agent_watch.is_some());
+    assert!(!check_agent(&mut app), "nothing to show before the done");
+
+    // when: the agent reads, then reports done
+    agent_reads(&path);
+    agent_done(&path, "2 threads answered");
+
+    // then: tuicr says so once, and stops checking
+    assert!(check_agent(&mut app));
+    assert_eq!(
+        app.message.as_ref().unwrap().content,
+        "Agent done \u{00b7} 2 threads answered"
+    );
+    assert!(app.agent_watch.is_none());
+}
+
+#[test]
+fn should_keep_watching_for_a_submit_made_after_the_agent_read() {
+    // given: a :submit, the agent's read, then a second :submit
+    let (_reviews, mut app, path) = app_with_a_waiting_agent();
+    app.start_submit_action_picker();
+    agent_reads(&path);
+    app.start_submit_action_picker();
+
+    // when: the agent reports done for what it read
+    agent_done(&path, "1 thread answered");
+
+    // then: tuicr shows it, says the second is pending, and keeps checking
+    assert!(check_agent(&mut app));
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .ends_with("still on your last :submit"),
+    );
+    assert!(app.agent_watch.is_some());
+
+    // when: the agent reads again and reports done
+    agent_reads(&path);
+    agent_done(&path, "1 thread answered");
+
+    // then: everything is covered
+    assert!(check_agent(&mut app));
+    assert_eq!(
+        app.message.as_ref().unwrap().content,
+        "Agent done \u{00b7} 1 thread answered"
+    );
+    assert!(app.agent_watch.is_none());
+}
+
+#[test]
+fn should_count_a_submit_before_the_agents_read_as_done() {
+    // given: two :submits, both before the agent's read
+    let (_reviews, mut app, path) = app_with_a_waiting_agent();
+    app.start_submit_action_picker();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    app.start_submit_action_picker();
+    agent_reads(&path);
+
+    // when
+    agent_done(&path, "2 threads answered");
+
+    // then: one done covers both
+    assert!(check_agent(&mut app));
+    assert!(app.agent_watch.is_none());
+}
