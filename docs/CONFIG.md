@@ -308,6 +308,24 @@ comment_types = [
 ]
 ```
 
+## Agent
+
+Settings under the `[agent]` section let `:submit` in a local review tell a
+coding agent that the review has something for it. Off until `send_command` is
+set; until then `:submit` stays PR-only, as before.
+
+```toml
+[agent]
+send_command = 'herdr pane run "$TUICR_AGENT" "/tuicr-connect comments $TUICR_SESSION"'
+```
+
+| Key            | Default | Description |
+| -------------- | ------- | ----------- |
+| `send_command` | unset   | Shell command `:submit` runs in a local review, from the checkout's root. `TUICR_SESSION` holds the session slug and `TUICR_AGENT` the id the agent registered with `tuicr review attach`. Its last line on stderr is shown when it fails. Local reviews only: a PR review never sends. |
+
+Sending needs an attached agent: without one, tuicr says so and runs nothing.
+See [Agents](REVIEW_CLI.md#agents).
+
 ## Forge
 
 Settings under the `[forge]` section control how tuicr submits reviews to GitHub, GitLab, Gitea,

@@ -175,7 +175,12 @@ impl App {
     /// confirmation modal follows.
     pub fn start_submit_action_picker(&mut self) {
         if !matches!(self.diff_source, DiffSource::PullRequest(_)) {
-            self.set_warning(":submit only applies in PR mode");
+            // A local review submits to its agent, when one is configured.
+            if self.agent_send_command.is_some() {
+                self.send_to_agent();
+            } else {
+                self.set_warning(":submit only applies in PR mode");
+            }
             return;
         }
         self.submit_picker_cursor = 0;

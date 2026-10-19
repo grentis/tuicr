@@ -318,6 +318,12 @@ pub(crate) fn mark_session_active_in_dir(
         let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
         active.prune_stale();
         let pid = std::process::id();
+        // Saving re-registers the session; an agent attached to it stays.
+        let agent = active
+            .sessions
+            .iter()
+            .find(|entry| entry.pid == pid && entry.path == path)
+            .and_then(|entry| entry.agent.clone());
         active
             .sessions
             .retain(|entry| entry.pid != pid && entry.path != path);
@@ -326,9 +332,101 @@ pub(crate) fn mark_session_active_in_dir(
             slug,
             path,
             last_seen_at: Utc::now(),
+            agent,
         });
         save_active_sessions_unlocked(reviews_dir, &active)
     })
+}
+
+/// Refresh this process's registration, so a tuicr left open longer than
+/// `ACTIVE_SESSION_STALE_AFTER` without saving still lists as active.
+pub(crate) fn touch_active_session_for_pid() -> Result<()> {
+    let reviews_dir = get_reviews_dir()?;
+    touch_active_session_for_pid_in_dir(&reviews_dir, std::process::id())
+}
+
+pub(crate) fn touch_active_session_for_pid_in_dir(reviews_dir: &Path, pid: u32) -> Result<()> {
+    maybe_migrate(reviews_dir)?;
+    with_reviews_dir_lock(reviews_dir, || {
+        let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+        let mut touched = false;
+        for entry in active.sessions.iter_mut().filter(|entry| entry.pid == pid) {
+            entry.last_seen_at = Utc::now();
+            touched = true;
+        }
+        if !touched {
+            return Ok(());
+        }
+        save_active_sessions_unlocked(reviews_dir, &active)
+    })
+}
+
+/// Register `agent`, replacing any earlier one, on the running tuicr that
+/// has the session at `path` open. False when none has it open.
+pub(crate) fn attach_agent_in_dir(reviews_dir: &Path, path: &Path, agent: &str) -> Result<bool> {
+    maybe_migrate(reviews_dir)?;
+    let path = normalize_active_path(path);
+    with_reviews_dir_lock(reviews_dir, || {
+        let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+        active.prune_stale();
+        let mut attached = false;
+        for entry in active
+            .sessions
+            .iter_mut()
+            .filter(|entry| normalize_active_path(&entry.path) == path)
+        {
+            entry.agent = Some(agent.to_string());
+            attached = true;
+        }
+        save_active_sessions_unlocked(reviews_dir, &active)?;
+        Ok(attached)
+    })
+}
+
+/// The agent attached to the session this process has open, if any.
+pub(crate) fn attached_agent_for_pid() -> Result<Option<String>> {
+    let reviews_dir = get_reviews_dir()?;
+    attached_agent_for_pid_in_dir(&reviews_dir, std::process::id())
+}
+
+pub(crate) fn attached_agent_for_pid_in_dir(
+    reviews_dir: &Path,
+    pid: u32,
+) -> Result<Option<String>> {
+    maybe_migrate(reviews_dir)?;
+    let active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+    Ok(active
+        .sessions
+        .into_iter()
+        .find(|entry| entry.pid == pid)
+        .and_then(|entry| entry.agent))
+}
+
+/// Which running tuicr has a session open, and the agent attached to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ActiveSessionOwner {
+    pub pid: u32,
+    pub agent: Option<String>,
+}
+
+/// The running tuicr behind each open session, by normalized path.
+pub(crate) fn active_session_owners_in_dir(
+    reviews_dir: &Path,
+) -> Result<std::collections::HashMap<PathBuf, ActiveSessionOwner>> {
+    maybe_migrate(reviews_dir)?;
+    let active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+    Ok(active
+        .sessions
+        .into_iter()
+        .filter(|entry| entry.is_fresh())
+        .map(|entry| {
+            let owner = ActiveSessionOwner {
+                pid: entry.pid,
+                agent: entry.agent.clone(),
+            };
+            (normalize_active_path(&entry.path), owner)
+        })
+        .collect())
 }
 
 pub(crate) fn clear_active_session_for_pid() -> Result<()> {
@@ -385,6 +483,10 @@ struct ActiveSessionEntry {
     slug: String,
     path: PathBuf,
     last_seen_at: chrono::DateTime<Utc>,
+    /// The id `tuicr review attach` registered; only `[agent] send_command`
+    /// interprets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent: Option<String>,
 }
 
 impl ActiveSessionEntry {

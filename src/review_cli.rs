@@ -63,6 +63,11 @@ fn run_with_writer(command: ReviewCommand, out: &mut impl Write) -> Result<()> {
         ReviewCommand::Clear { session, repo } => {
             clear_comments(&session, &repo, ClearScope::CommentsAndReviewed, out)
         }
+        ReviewCommand::Attach {
+            session,
+            repo,
+            agent,
+        } => attach_agent(&session, &repo, &agent, out),
     }
 }
 
@@ -110,13 +115,54 @@ fn list_sessions(repo: &Path, all: bool, out: &mut impl Write) -> Result<()> {
     } else {
         store.list_sessions_for_repo(repo)?
     };
+    let owners = store.active_owners()?;
     let output: Vec<_> = summaries
         .into_iter()
-        .map(SessionSummaryOutput::from)
+        .map(|summary| {
+            let path = storage::normalize_path_for_comparison(summary.session_ref.path());
+            let owner = owners.get(&path);
+            SessionSummaryOutput {
+                pid: owner.map(|owner| owner.pid),
+                agent: owner.and_then(|owner| owner.agent.clone()),
+                ..SessionSummaryOutput::from(summary)
+            }
+        })
         .collect();
     serde_json::to_writer_pretty(&mut *out, &output)?;
     writeln!(out)?;
     Ok(())
+}
+
+/// `tuicr review attach`: set the agent `:submit` notifies. Refuses PR
+/// sessions and sessions no running tuicr has open.
+fn attach_agent(session: &str, repo: &Path, agent: &str, out: &mut impl Write) -> Result<()> {
+    let store = ReviewStore::new();
+    let session_ref = resolve_session_ref(&store, repo, session)?;
+    if store.get_review(&session_ref)?.pr_session_key.is_some() {
+        return Err(TuicrError::InvalidInput(format!(
+            "'{session}' is a PR session; agents attach to local reviews only"
+        )));
+    }
+    if !store.attach_agent(&session_ref, agent)? {
+        return Err(TuicrError::InvalidInput(format!(
+            "no running tuicr has '{session}' open. Start it first, then attach."
+        )));
+    }
+    let output = AttachOutput {
+        session: session.to_string(),
+        path: session_ref.path().display().to_string(),
+        agent: agent.to_string(),
+    };
+    serde_json::to_writer_pretty(&mut *out, &output)?;
+    writeln!(out)?;
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct AttachOutput {
+    session: String,
+    path: String,
+    agent: String,
 }
 
 struct AddCommentOptions {
@@ -609,6 +655,12 @@ struct SessionSummaryOutput {
     file_count: usize,
     anchor: String,
     active: bool,
+    /// Pid of the tuicr that has the session open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pid: Option<u32>,
+    /// The agent `tuicr review attach` registered, while a tuicr has it open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<String>,
 }
 
 impl From<SessionSummary> for SessionSummaryOutput {
@@ -623,6 +675,8 @@ impl From<SessionSummary> for SessionSummaryOutput {
             file_count: summary.file_count,
             anchor: summary.anchor,
             active: summary.active,
+            pid: None,
+            agent: None,
         }
     }
 }

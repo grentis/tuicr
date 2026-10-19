@@ -1414,6 +1414,13 @@ pub struct App {
     /// formatting on submit. Defaults to `ForgeConfig::default()` when the
     /// section is missing.
     pub forge_config: crate::config::ForgeConfig,
+    /// `[agent] send_command`, run by `:submit` in a local review. `None`
+    /// keeps `:submit` PR-only.
+    pub agent_send_command: Option<String>,
+    /// The in-flight run of `agent_send_command`.
+    pub agent_send_rx: Option<std::sync::mpsc::Receiver<agent::AgentSendResult>>,
+    /// When to next refresh this process's active-session registration.
+    pub next_active_heartbeat_at: std::time::Instant,
     /// Local viewer identity. Stamped on new comments authored in the TUI,
     /// and compared against existing comment authors so the comment pane can
     /// distinguish "your" comments from others. Resolved from the config
@@ -2059,6 +2066,7 @@ impl AppStartupOptions<'_> {
     }
 }
 
+mod agent;
 mod annotations;
 mod branch;
 mod coloring;
