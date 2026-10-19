@@ -398,6 +398,19 @@ If git refuses, its error is shown and the draft is kept. Afterwards the new
 commit joins the commit list and its files are marked `·`; the diff and the
 reviewed marks are unchanged.
 
+`e` on a commit in the commit selector opens the same pop-up on that commit's
+message, to rename it; saving rewrites only the message. The latest commit is
+amended (`git commit --amend --only`), with hooks and signing as usual. An
+older one is rewritten without a rebase: it and every commit after it are
+written again with the same files, author and date, and the branch moves to
+the result. The working tree and index are untouched and no conflict can
+happen; the rewritten commits are signed when `commit.gpgsign` is on, but
+hooks do not run for them. Every commit after the renamed one gets a new id,
+and comments and reviewed marks tied to the old ids follow them. Merge
+commits after the target, the repository's first commit, and the staged and
+unstaged rows cannot be renamed. On failure the edited message is kept for
+the next `e` on the same commit.
+
 ### Replying to GitHub threads
 
 With `extended_comments = true` under `[forge]`, `c` on a comment thread in a
@@ -456,6 +469,7 @@ commit an approval covered, so no commits are preselected there.
 | `j` / `k` | Navigate commits |
 | `Space` / `Enter` | Toggle commit selection (updates diff) |
 | `(` / `)` | Cycle through individual commits |
+| `e` | Rename the commit (`git_actions` in a `--branch` review; see [Committing](#committing)) |
 | `Esc` | Return focus to diff |
 
 ## Confirm dialogs

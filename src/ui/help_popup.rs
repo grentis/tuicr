@@ -329,6 +329,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  e         ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Rename the commit (git_actions, --branch)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  Esc       ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
