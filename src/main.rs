@@ -282,6 +282,10 @@ fn main() -> anyhow::Result<()> {
                 if let Some(forge_cfg) = cfg.forge.clone() {
                     app.forge_config = forge_cfg;
                 }
+                app.agent_send_command = cfg
+                    .agent
+                    .as_ref()
+                    .and_then(|agent| agent.send_command.clone());
                 if let Some(leader) = cfg.leader {
                     app.leader_key = leader;
                 }
@@ -519,6 +523,8 @@ fn main() -> anyhow::Result<()> {
         needs_redraw |= app.poll_mention_events();
         needs_redraw |= app.poll_pr_comment_events();
         needs_redraw |= app.poll_commit_events();
+        needs_redraw |= app.poll_agent_send_events();
+        app.poll_active_session_heartbeat();
         needs_redraw |= app.poll_persisted_session_changes();
         needs_redraw |= app.poll_diff_watch_changes();
         needs_redraw |= pr_pending;

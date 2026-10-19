@@ -30,6 +30,7 @@ tuicr review list --repo slatedb/slatedb              # all sessions for a forge
 tuicr review list --all                               # every session across all repos
 tuicr review comments --session agavra/tuicr@main/worktree
 tuicr review comments --session gh:slatedb/slatedb/pr/1745
+tuicr review attach --session agavra/tuicr@main/branch --agent w1N:p1
 ```
 
 All `tuicr review` commands emit JSON by default. Timestamps are RFC3339 strings
@@ -78,6 +79,26 @@ tuicr review list --repo git@gitlab.com:org/team/svc.git
 
 `--repo` for `add` / `comments` is only consulted when resolving a *local*
 slug; PR slugs and JSON paths ignore it.
+
+## Agents
+
+An agent working on a checkout can register itself on the tuicr reviewing it,
+so `:submit` there tells it there is something to do:
+
+```bash
+tuicr review attach --repo . --session agavra/tuicr@main/branch --agent w1N:p1
+#   -> { "session": "...", "path": "...", "agent": "w1N:p1" }
+```
+
+`--agent` is any id the configured `[agent] send_command` understands, a
+terminal pane for instance; tuicr only hands it over as `TUICR_AGENT`. A new
+attach replaces the previous one. Attaching needs a running tuicr with the
+session open, and refuses PR sessions: agents act on local reviews only.
+
+`tuicr review list` shows, on a session a tuicr has open, that tuicr's
+process id as `pid` and the attached id as `agent`.
+A running tuicr refreshes its registration every ten minutes, so one left open
+all day still lists as `active`.
 
 ## Add Comments
 

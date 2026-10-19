@@ -94,6 +94,16 @@ impl Default for ForgeConfig {
     }
 }
 
+/// `[agent]` section: handing a local review to a coding agent.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct AgentConfig {
+    /// Shell command `:submit` runs in a local review to notify the attached
+    /// agent, with `TUICR_SESSION` (the session slug) and `TUICR_AGENT` (the
+    /// id from `tuicr review attach`). Unset, sending is off.
+    pub send_command: Option<String>,
+}
+
 const DEFAULT_EXPORT_INTRO: &str =
     "I reviewed your code and have the following comments. Please address them.";
 const DEFAULT_EXPORT_COMMENTS_HEADER: &str = "## Local tuicr Comments";
@@ -268,6 +278,8 @@ pub struct AppConfig {
     /// `[export]` section settings. `None` means "no override"; downstream
     /// code should treat it as `ExportConfig::default()`.
     pub export: Option<ExportConfig>,
+    /// `[agent]` settings. `None` when the section is absent or empty.
+    pub agent: Option<AgentConfig>,
 }
 
 impl AppConfig {
@@ -335,6 +347,7 @@ const KNOWN_KEYS: &[&str] = &[
     "git_actions",
     "forge",
     "export",
+    "agent",
 ];
 
 const FORGE_KNOWN_KEYS: &[&str] = &[
@@ -343,6 +356,8 @@ const FORGE_KNOWN_KEYS: &[&str] = &[
     "extended_comments",
     "local_diff_fallback",
 ];
+
+const AGENT_KNOWN_KEYS: &[&str] = &["send_command"];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
     "intro",
@@ -702,6 +717,9 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         export: table
             .get("export")
             .and_then(|v| parse_export(v, &mut warnings)),
+        agent: table
+            .get("agent")
+            .and_then(|v| parse_agent(v, &mut warnings)),
     };
 
     for key in table.keys() {
@@ -797,6 +815,28 @@ fn parse_export(value: &Value, warnings: &mut Vec<String>) -> Option<ExportConfi
     } else {
         Some(cfg)
     }
+}
+
+/// Parse `[agent]`. `None` when empty, so it acts like an absent section.
+fn parse_agent(value: &Value, warnings: &mut Vec<String>) -> Option<AgentConfig> {
+    let Some(table) = value.as_table() else {
+        warnings.push("Warning: Config key 'agent' must be a table; ignoring value".to_string());
+        return None;
+    };
+
+    for key in table.keys() {
+        if !AGENT_KNOWN_KEYS.contains(&key.as_str()) {
+            warnings.push(format!(
+                "Warning: Unknown config key 'agent.{key}', ignoring"
+            ));
+        }
+    }
+
+    let cfg = AgentConfig {
+        send_command: read_section_string(table, "agent", "send_command", warnings)
+            .filter(|command| !command.trim().is_empty()),
+    };
+    (cfg != AgentConfig::default()).then_some(cfg)
 }
 
 /// Like `read_bool`, but emits a `<section>.<key>` qualified warning so the

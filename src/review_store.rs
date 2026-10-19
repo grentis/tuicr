@@ -134,6 +134,22 @@ impl ReviewStore {
         storage::delete_inactive_session_in_dir(session_ref.path(), &reviews_dir)
     }
 
+    /// Register `agent` on the running tuicr that has this session open.
+    /// Returns false when no running tuicr has it open.
+    pub fn attach_agent(&self, session_ref: &SessionRef, agent: &str) -> Result<bool> {
+        let reviews_dir = self.reviews_dir()?;
+        storage::attach_agent_in_dir(&reviews_dir, session_ref.path(), agent)
+    }
+
+    /// Each open session's running tuicr and attached agent, by normalized
+    /// path.
+    pub(crate) fn active_owners(
+        &self,
+    ) -> Result<std::collections::HashMap<PathBuf, storage::ActiveSessionOwner>> {
+        let reviews_dir = self.reviews_dir()?;
+        storage::active_session_owners_in_dir(&reviews_dir)
+    }
+
     /// Save a session through this store's storage root.
     pub fn save_review(&self, session: &ReviewSession) -> Result<SessionRef> {
         let reviews_dir = self.reviews_dir()?;
