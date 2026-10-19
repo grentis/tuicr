@@ -69,8 +69,10 @@ pub fn open_pull_request(
     target: PullRequestTarget,
     local_checkout: Option<&Path>,
     highlighter: &SyntaxHighlighter,
+    local_diff_fallback: bool,
 ) -> Result<OpenedPullRequest> {
-    let (details, patches, commits, review_metadata, pr_info) = fetch_pr_data(backend, target)?;
+    let (details, patches, commits, review_metadata, pr_info) =
+        fetch_pr_data(backend, target, local_diff_fallback)?;
     prepare_fetched_pr(
         details,
         patches,
@@ -91,6 +93,8 @@ pub fn open_pull_request(
 /// inline selector. The PR's metadata is required; its diff is not: when
 /// only the diff fails (a PR over GitHub's 300-file limit, say), the error
 /// travels in place of the patches so the PR still opens, without a diff.
+/// With `local_diff_fallback`, a diff refused as too large comes from the
+/// local checkout instead.
 ///
 /// Only the PR metadata and the diff-base refinement have to come first.
 /// The diff, the commit list, and the review metadata need nothing but the
@@ -99,6 +103,7 @@ pub fn open_pull_request(
 pub fn fetch_pr_data(
     backend: &(dyn ForgeBackend + Sync),
     target: PullRequestTarget,
+    local_diff_fallback: bool,
 ) -> Result<PrFetchData> {
     let mut pr_info = backend.get_pull_request_info(target)?;
     // Pin `base_sha` to the commit the displayed patch is actually taken
@@ -110,19 +115,45 @@ pub fn fetch_pr_data(
         pr_info.details.base_sha = base_sha;
     }
     let details = pr_info.details.clone();
-    let (patches, (commits, review_metadata)) = join(
-        || backend.get_pull_request_diff(&details),
-        || {
-            join(
-                || backend.list_pull_request_commits(&details),
-                || backend.list_pull_request_review_metadata(&details),
-            )
-        },
-    );
-    let patches = patches.map_err(|e| e.to_string());
+    let fetch_diff = || match backend.get_pull_request_diff(&details) {
+        Ok(patches) => Ok(patches),
+        Err(error) if local_diff_fallback && backend.is_diff_too_large(&error) => {
+            local_pr_diff(backend, &details).map_err(|why| format!("{why} · {error}"))
+        }
+        Err(error) => Err(error.to_string()),
+    };
+    let (patches, (commits, review_metadata)) = join(fetch_diff, || {
+        join(
+            || backend.list_pull_request_commits(&details),
+            || backend.list_pull_request_review_metadata(&details),
+        )
+    });
     let commits = commits.unwrap_or_default();
     let review_metadata = review_metadata.unwrap_or_default();
     Ok((details, patches, commits, review_metadata, pr_info))
+}
+
+/// The PR's diff from the local checkout, as the forge builds it: the
+/// merge-base of base and head against head. Errs with what is missing.
+fn local_pr_diff(
+    backend: &dyn ForgeBackend,
+    pr: &PullRequestDetails,
+) -> std::result::Result<Vec<FilePatch>, String> {
+    let Some(root) = backend.local_checkout_path() else {
+        return Err(format!(
+            "run tuicr from a checkout of {} to diff it locally",
+            pr.repository.slug()
+        ));
+    };
+    let merge_base =
+        crate::forge::local_merge_base(&root, &pr.base_sha, &pr.head_sha).ok_or_else(|| {
+            format!(
+                "the local checkout lacks the PR's commits: fetch {} and the PR's head",
+                pr.base_ref_name
+            )
+        })?;
+    let range = format!("{merge_base}..{}", pr.head_sha);
+    crate::vcs::git::raw::run_git_diff(&root, &[range.as_str()]).map_err(|e| e.to_string())
 }
 
 /// Main-thread half of the PR open for fetched data: the usual preparation
@@ -398,7 +429,7 @@ index 1111111..2222222 100644
         let target = PullRequestTarget::with_repository(repo(), 125, "125");
         let highlighter = SyntaxHighlighter::default();
         // when
-        let opened = open_pull_request(&backend, target, None, &highlighter).unwrap();
+        let opened = open_pull_request(&backend, target, None, &highlighter, false).unwrap();
         // then
         assert_eq!(opened.diff_files.len(), 1);
         assert_eq!(opened.key.head_sha, "abcdef0123456789");
@@ -466,7 +497,7 @@ rename to new_name.rs
         let target = PullRequestTarget::with_repository(repo(), 125, "125");
         let highlighter = SyntaxHighlighter::default();
         // when
-        let opened = open_pull_request(&backend, target, None, &highlighter).unwrap();
+        let opened = open_pull_request(&backend, target, None, &highlighter, false).unwrap();
         // then — all four files are recognized with correct statuses
         assert_eq!(opened.diff_files.len(), 4);
         let statuses: Vec<(String, crate::model::FileStatus)> = opened
@@ -501,7 +532,7 @@ rename to new_name.rs
         let target = PullRequestTarget::with_repository(repo(), 125, "125");
         let highlighter = SyntaxHighlighter::default();
         // when
-        let err = open_pull_request(&backend, target, None, &highlighter).unwrap_err();
+        let err = open_pull_request(&backend, target, None, &highlighter, false).unwrap_err();
         // then
         let msg = err.to_string();
         assert!(
@@ -588,7 +619,7 @@ rename to new_name.rs
         let target = PullRequestTarget::with_repository(repo(), 125, "125");
         let highlighter = SyntaxHighlighter::default();
         // when
-        let opened = open_pull_request(&backend, target, None, &highlighter).unwrap();
+        let opened = open_pull_request(&backend, target, None, &highlighter, false).unwrap();
         // then — both the standalone details and the copy carried on pr_info
         // report the merge base, so PR-mode entry, the info panel, and the
         // reload paths can't disagree about the old side.
@@ -616,7 +647,7 @@ rename to new_name.rs
         let target = PullRequestTarget::with_repository(repo(), 125, "125");
         let highlighter = SyntaxHighlighter::default();
         // when
-        let opened = open_pull_request(&backend, target, None, &highlighter).unwrap();
+        let opened = open_pull_request(&backend, target, None, &highlighter, false).unwrap();
         // then — untouched.
         assert_eq!(opened.details.base_sha, "1234567890abcdef");
         assert_eq!(opened.pr_info.details.base_sha, "1234567890abcdef");
@@ -782,7 +813,7 @@ rename to new_name.rs
         let _ = fetch_pr_data_sequential(&sequential_backend, target()).unwrap();
         let sequential = started.elapsed();
         let started = std::time::Instant::now();
-        let _ = fetch_pr_data(&concurrent_backend, target()).unwrap();
+        let _ = fetch_pr_data(&concurrent_backend, target(), false).unwrap();
         let concurrent = started.elapsed();
         eprintln!("4 calls x {delay_ms}ms: sequential {sequential:?}, concurrent {concurrent:?}");
         // then — the sequential path pays for all four calls; the concurrent
@@ -827,7 +858,7 @@ rename to new_name.rs
             let concurrent = SlowBackend::new(0, fail);
             // when
             let expected = outcome(fetch_pr_data_sequential(&sequential, target()));
-            let actual = outcome(fetch_pr_data(&concurrent, target()));
+            let actual = outcome(fetch_pr_data(&concurrent, target(), false));
             // then
             assert_eq!(actual, expected, "failing calls: {fail:?}");
         }
@@ -838,7 +869,7 @@ rename to new_name.rs
         // given — the diff and the commit list both fail.
         let backend = SlowBackend::new(0, &["get_pull_request_diff", "list_pull_request_commits"]);
         // when
-        let (_, patches, commits, _, _) = fetch_pr_data(&backend, target()).unwrap();
+        let (_, patches, commits, _, _) = fetch_pr_data(&backend, target(), false).unwrap();
         // then — the PR opens with the diff's error; the best-effort one is dropped.
         assert_eq!(patches, Err("get_pull_request_diff failed".to_string()));
         assert!(commits.is_empty());
@@ -852,7 +883,8 @@ rename to new_name.rs
             ],
         );
         // when
-        let (_, patches, commits, review_metadata, _) = fetch_pr_data(&backend, target()).unwrap();
+        let (_, patches, commits, review_metadata, _) =
+            fetch_pr_data(&backend, target(), false).unwrap();
         // then — the diff still opens, without the commit selector.
         assert_eq!(patches.unwrap().len(), 1);
         assert!(commits.is_empty());
@@ -864,7 +896,7 @@ rename to new_name.rs
         // given
         let backend = SlowBackend::new(0, &["get_pull_request"]);
         // when
-        let result = fetch_pr_data(&backend, target());
+        let result = fetch_pr_data(&backend, target(), false);
         // then
         assert!(result.is_err());
         assert_eq!(
@@ -881,7 +913,7 @@ rename to new_name.rs
         let target = PullRequestTarget::with_repository(repo(), 125, "125");
         let highlighter = SyntaxHighlighter::default();
         // when
-        let opened = open_pull_request(&backend, target, None, &highlighter).unwrap();
+        let opened = open_pull_request(&backend, target, None, &highlighter, false).unwrap();
         // then the PR opens, empty, saying why
         assert!(opened.diff_files.is_empty());
         assert!(

@@ -170,6 +170,7 @@ fn open(state: &Arc<Mutex<BranchState>>, branch: Option<&str>) -> Result<App> {
         show_pr_checks: false,
         show_pr_comments: false,
         pr_comments_visibility: None,
+        local_diff_fallback: false,
         git_backend_preference: crate::vcs::git::GitBackendPreference::Libgit2,
         diff_whitespace_mode: Default::default(),
         commit_selection: CommitSelectionStart::All,

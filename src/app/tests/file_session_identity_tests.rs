@@ -37,6 +37,7 @@ fn file_options(path: &str) -> AppStartupOptions<'_> {
         pr_target: None,
         repo_url_override: None,
         branch_base: None,
+        local_diff_fallback: false,
     }
 }
 

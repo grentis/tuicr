@@ -85,6 +85,9 @@ pub struct ForgeConfig {
     /// Extra comment features for pull requests: `@` mention suggestions and
     /// `<leader>C` conversation comments. Off by default.
     pub extended_comments: bool,
+    /// Build a PR's diff from the local checkout when the forge refuses it
+    /// as too large. Off by default.
+    pub local_diff_fallback: bool,
 }
 
 impl Default for ForgeConfig {
@@ -93,6 +96,7 @@ impl Default for ForgeConfig {
             comment_type_prefix: true,
             sync_viewed: false,
             extended_comments: false,
+            local_diff_fallback: false,
         }
     }
 }
@@ -342,7 +346,12 @@ const KNOWN_KEYS: &[&str] = &[
     "export",
 ];
 
-const FORGE_KNOWN_KEYS: &[&str] = &["comment_type_prefix", "sync_viewed", "extended_comments"];
+const FORGE_KNOWN_KEYS: &[&str] = &[
+    "comment_type_prefix",
+    "sync_viewed",
+    "extended_comments",
+    "local_diff_fallback",
+];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
     "intro",
@@ -763,6 +772,11 @@ fn parse_forge(value: &Value, warnings: &mut Vec<String>) -> Option<ForgeConfig>
 
     if let Some(v) = read_section_bool(table, "forge", "extended_comments", warnings) {
         cfg.extended_comments = v;
+        any_override = true;
+    }
+
+    if let Some(v) = read_section_bool(table, "forge", "local_diff_fallback", warnings) {
+        cfg.local_diff_fallback = v;
         any_override = true;
     }
 

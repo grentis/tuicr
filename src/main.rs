@@ -269,6 +269,11 @@ fn main() -> anyhow::Result<()> {
                     .and_then(|cfg| cfg.show_pr_comments)
                     .unwrap_or(true),
                 pr_comments_visibility,
+                local_diff_fallback: config_outcome
+                    .config
+                    .as_ref()
+                    .and_then(|cfg| cfg.forge.as_ref())
+                    .is_some_and(|forge| forge.local_diff_fallback),
                 git_backend_preference,
                 diff_whitespace_mode,
                 commit_selection,

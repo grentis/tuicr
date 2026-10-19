@@ -1948,6 +1948,7 @@ mod tests {
             show_pr_checks: false,
             show_pr_comments: true,
             pr_comments_visibility: None,
+            local_diff_fallback: false,
             git_backend_preference: GitBackendPreference::Cli,
             diff_whitespace_mode: mode.clone(),
             commit_selection: CommitSelectionStart::All,
