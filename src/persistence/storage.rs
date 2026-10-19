@@ -1532,6 +1532,54 @@ mod tests {
     }
 
     #[test]
+    fn should_tell_the_waiting_agent_about_a_submit() {
+        // given: a session this process has open, and a live waiter (this
+        // process)
+        let _g = with_test_reviews_dir();
+        let (reviews_dir, path, _session) = running_session();
+        let pid = std::process::id();
+        assert!(!notify_waiter_for_pid_in_dir(&reviews_dir, pid).unwrap());
+        assert_eq!(
+            wait_on_session_in_dir(&reviews_dir, &path, pid).unwrap(),
+            WaitState::Waiting { submitted_at: None }
+        );
+
+        // when: `:submit`
+        assert!(notify_waiter_for_pid_in_dir(&reviews_dir, pid).unwrap());
+
+        // then: the waiter sees it, and a second agent is turned away
+        let WaitState::Waiting { submitted_at } =
+            wait_on_session_in_dir(&reviews_dir, &path, pid).unwrap()
+        else {
+            panic!("still waiting");
+        };
+        assert!(submitted_at.is_some());
+        assert_eq!(
+            wait_on_session_in_dir(&reviews_dir, &path, 5151).unwrap(),
+            WaitState::TakenBy(pid)
+        );
+    }
+
+    #[test]
+    fn should_see_no_open_session_to_wait_on() {
+        let _g = with_test_reviews_dir();
+        let reviews_dir = get_reviews_dir().unwrap();
+        let session = make_local_session(
+            make_repo(),
+            "abc1234",
+            Some("main"),
+            SessionDiffSource::Branch,
+            None,
+        );
+        let path = save_session(&session).unwrap();
+
+        assert_eq!(
+            wait_on_session_in_dir(&reviews_dir, &path, 4242).unwrap(),
+            WaitState::NotOpen
+        );
+    }
+
+    #[test]
     fn should_recover_stale_reviews_dir_lock() {
         let _g = with_test_reviews_dir();
         let reviews_dir = get_reviews_dir().unwrap();
