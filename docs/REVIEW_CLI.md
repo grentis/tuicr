@@ -98,6 +98,19 @@ once a second, fails at once when no running tuicr has the session open, when
 another agent is already waiting on it, and for PR sessions, and stops with an
 error when the tuicr is closed.
 
+When it has worked through what it read, the agent says so:
+
+```bash
+tuicr review done --repo . --session agavra/tuicr@main/branch --message "3 threads answered"
+```
+
+tuicr shows `Agent done · 3 threads answered` in its status bar. It checks for
+this once a second, only from a `:submit` until the agent is done (or after
+five minutes with no agent waiting). A done covers every `:submit` made before
+the agent's last `review comments --needs-reply`: if you submitted again after
+that read, tuicr adds `still on your last :submit` and keeps waiting for the
+next done. It does not reload the review: `:e` shows the replies.
+
 Without a waiting agent, `:submit` falls back to `[agent] send_command`. For
 that, an agent registers an id instead:
 

@@ -589,6 +589,7 @@ impl App {
             agent_send_command: None,
             agent_send_rx: None,
             next_active_heartbeat_at: std::time::Instant::now(),
+            agent_watch: None,
             username: crate::model::comment::DEFAULT_AUTHOR.to_string(),
             submit_state: None,
             submit_picker_cursor: 0,

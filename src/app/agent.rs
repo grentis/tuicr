@@ -14,6 +14,21 @@ use super::*;
 /// Registration refresh interval, well inside the 12-hour stale limit.
 const ACTIVE_HEARTBEAT_EVERY: Duration = Duration::from_secs(10 * 60);
 
+/// How often a tuicr checks for its agent's `tuicr review done`.
+const AGENT_WATCH_EVERY: Duration = Duration::from_secs(1);
+
+/// How long without a waiting agent before a tuicr stops checking.
+const AGENT_GONE_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// A tuicr waiting for its agent's `tuicr review done`.
+#[derive(Debug, Clone)]
+pub struct AgentWatch {
+    /// Only a done after this counts.
+    seen_done_at: chrono::DateTime<chrono::Utc>,
+    pub(in crate::app) next_check_at: Instant,
+    waiter_gone_since: Option<Instant>,
+}
+
 /// A send's outcome: the agent's id, or why it failed.
 pub type AgentSendResult = std::result::Result<String, String>;
 
@@ -67,6 +82,7 @@ impl App {
         match crate::persistence::storage::notify_waiter_for_pid() {
             Ok(true) => {
                 self.set_message("Submitted to the agent");
+                self.watch_agent();
                 true
             }
             Ok(false) => false,
@@ -95,6 +111,63 @@ impl App {
             Ok(agent) => self.set_message(format!("Sent to {agent}")),
             Err(error) => self.set_error(format!("Send failed \u{00b7} {error}")),
         }
+        true
+    }
+
+    /// Start checking for the agent's `tuicr review done`, unless already:
+    /// a `:submit` made meanwhile keeps the same watch, and its later done.
+    fn watch_agent(&mut self) {
+        if self.agent_watch.is_none() {
+            self.agent_watch = Some(AgentWatch {
+                seen_done_at: chrono::Utc::now(),
+                next_check_at: Instant::now() + AGENT_WATCH_EVERY,
+                waiter_gone_since: None,
+            });
+        }
+    }
+
+    /// While the agent works, check once a second whether it reported done.
+    /// The watch ends once a done covers every `:submit`, or when no agent
+    /// has waited for `AGENT_GONE_AFTER`. Returns whether to repaint.
+    pub fn poll_agent_done(&mut self) -> bool {
+        let now = Instant::now();
+        let Some(watch) = self.agent_watch.as_mut() else {
+            return false;
+        };
+        if now < watch.next_check_at {
+            return false;
+        }
+        watch.next_check_at = now + AGENT_WATCH_EVERY;
+        let Ok(Some(progress)) = crate::persistence::storage::agent_progress_for_pid() else {
+            return false;
+        };
+        if progress.waiting {
+            watch.waiter_gone_since = None;
+        } else if now.duration_since(*watch.waiter_gone_since.get_or_insert(now))
+            >= AGENT_GONE_AFTER
+        {
+            self.agent_watch = None;
+            return false;
+        }
+        let Some(done) = progress.done.filter(|done| done.at > watch.seen_done_at) else {
+            return false;
+        };
+        watch.seen_done_at = done.at;
+        let covered = match (done.covers, progress.submitted_at) {
+            (_, None) => true,
+            (Some(read), Some(submitted)) => read >= submitted,
+            (None, Some(_)) => false,
+        };
+        let mut text = match done.message {
+            Some(message) => format!("Agent done \u{00b7} {message}"),
+            None => "Agent done".to_string(),
+        };
+        if covered {
+            self.agent_watch = None;
+        } else {
+            text.push_str(" \u{00b7} still on your last :submit");
+        }
+        self.set_message(text);
         true
     }
 
