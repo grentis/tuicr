@@ -1050,3 +1050,26 @@ fn should_keep_the_commit_and_rename_drafts_apart() {
     assert_eq!(app.dialog_draft().unwrap().title, "New work");
     assert_eq!(app.dialog_rename_target(), None);
 }
+
+#[test]
+fn should_submit_a_local_review_to_its_agent_only_when_one_is_configured() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = open(&state, Some("feature")).expect("open branch review");
+    let message = |app: &App| app.message.as_ref().unwrap().content.clone();
+
+    // Without `[agent] send_command`, `:submit` stays PR-only.
+    app.start_submit_action_picker();
+    assert!(message(&app).contains("only applies in PR mode"));
+
+    // With it, `:submit` sends, here to no one: nothing attached.
+    app.agent_send_command = Some("true".to_string());
+    app.start_submit_action_picker();
+    assert!(
+        message(&app).contains("No agent attached"),
+        "{}",
+        message(&app)
+    );
+    assert!(app.agent_send_rx.is_none());
+    assert_eq!(app.input_mode, InputMode::Normal);
+}

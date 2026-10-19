@@ -121,3 +121,39 @@ pub(in crate::app) fn run_send_command(
         .unwrap_or_else(|| format!("send_command exited with {}", output.status));
     Err(reason)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_hand_the_session_and_agent_to_the_send_command() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let result = run_send_command(
+            r#"printf '%s %s %s' "$TUICR_SESSION" "$TUICR_AGENT" "$(pwd)" > sent.txt"#,
+            dir.path(),
+            "me/repo@feature/branch",
+            "w1N:p1",
+        );
+
+        assert_eq!(result, Ok("w1N:p1".to_string()));
+        let sent = std::fs::read_to_string(dir.path().join("sent.txt")).unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        assert_eq!(
+            sent,
+            format!("me/repo@feature/branch w1N:p1 {}", root.display())
+        );
+    }
+
+    #[test]
+    fn should_report_why_the_send_command_failed() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let stderr = run_send_command("echo 'no such pane' >&2; exit 3", dir.path(), "s", "a");
+        let silent = run_send_command("exit 4", dir.path(), "s", "a");
+
+        assert_eq!(stderr, Err("no such pane".to_string()));
+        assert!(silent.unwrap_err().contains("exit status: 4"));
+    }
+}
