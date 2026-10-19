@@ -175,7 +175,10 @@ impl App {
     /// confirmation modal follows.
     pub fn start_submit_action_picker(&mut self) {
         if !matches!(self.diff_source, DiffSource::PullRequest(_)) {
-            // A local review submits to its agent, when one is configured.
+            // Local: tell a `tuicr review wait`, else `[agent] send_command`.
+            if self.session.pr_session_key.is_none() && self.notify_waiting_agent() {
+                return;
+            }
             if self.agent_send_command.is_some() {
                 self.send_to_agent();
             } else {

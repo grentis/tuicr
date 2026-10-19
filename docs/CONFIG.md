@@ -310,9 +310,10 @@ comment_types = [
 
 ## Agent
 
-Settings under the `[agent]` section let `:submit` in a local review tell a
-coding agent that the review has something for it. Off until `send_command` is
-set; until then `:submit` stays PR-only, as before.
+`:submit` in a local review tells the agent waiting on it (`tuicr review wait`,
+see [Agents](REVIEW_CLI.md#agents)) that the review has something for it.
+Settings under the `[agent]` section are the fallback when no agent waits:
+`send_command` runs instead. With neither, `:submit` stays PR-only, as before.
 
 ```toml
 [agent]

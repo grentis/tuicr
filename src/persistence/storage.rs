@@ -318,12 +318,14 @@ pub(crate) fn mark_session_active_in_dir(
         let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
         active.prune_stale();
         let pid = std::process::id();
-        // Saving re-registers the session; an agent attached to it stays.
-        let agent = active
+        // Re-registering on save keeps the attached agent and waiter.
+        let previous = active
             .sessions
             .iter()
-            .find(|entry| entry.pid == pid && entry.path == path)
-            .and_then(|entry| entry.agent.clone());
+            .find(|entry| entry.pid == pid && entry.path == path);
+        let agent = previous.and_then(|entry| entry.agent.clone());
+        let waiter_pid = previous.and_then(|entry| entry.waiter_pid);
+        let submitted_at = previous.and_then(|entry| entry.submitted_at);
         active
             .sessions
             .retain(|entry| entry.pid != pid && entry.path != path);
@@ -333,6 +335,8 @@ pub(crate) fn mark_session_active_in_dir(
             path,
             last_seen_at: Utc::now(),
             agent,
+            waiter_pid,
+            submitted_at,
         });
         save_active_sessions_unlocked(reviews_dir, &active)
     })
@@ -400,6 +404,86 @@ pub(crate) fn attached_agent_for_pid_in_dir(
         .into_iter()
         .find(|entry| entry.pid == pid)
         .and_then(|entry| entry.agent))
+}
+
+/// `:submit` from this process: tell the live `tuicr review wait` on its
+/// session, if any. Returns whether there was one.
+pub(crate) fn notify_waiter_for_pid() -> Result<bool> {
+    let reviews_dir = get_reviews_dir()?;
+    notify_waiter_for_pid_in_dir(&reviews_dir, std::process::id())
+}
+
+pub(crate) fn notify_waiter_for_pid_in_dir(reviews_dir: &Path, pid: u32) -> Result<bool> {
+    maybe_migrate(reviews_dir)?;
+    with_reviews_dir_lock(reviews_dir, || {
+        let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+        let mut notified = false;
+        for entry in active.sessions.iter_mut().filter(|entry| entry.pid == pid) {
+            if entry.live_waiter().is_some() {
+                entry.submitted_at = Some(Utc::now());
+                notified = true;
+            }
+        }
+        if notified {
+            save_active_sessions_unlocked(reviews_dir, &active)?;
+        }
+        Ok(notified)
+    })
+}
+
+/// What `tuicr review wait` sees of the session at `path` on each look.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WaitState {
+    /// No running tuicr has it open.
+    NotOpen,
+    /// Another live waiter holds it.
+    TakenBy(u32),
+    /// `waiter` is registered; `submitted_at` is the last `:submit` it got.
+    Waiting {
+        submitted_at: Option<chrono::DateTime<Utc>>,
+    },
+}
+
+/// Register `waiter` on every running tuicr with the session at `path` open,
+/// unless another live waiter holds it, and report the state.
+pub(crate) fn wait_on_session_in_dir(
+    reviews_dir: &Path,
+    path: &Path,
+    waiter: u32,
+) -> Result<WaitState> {
+    maybe_migrate(reviews_dir)?;
+    let path = normalize_active_path(path);
+    with_reviews_dir_lock(reviews_dir, || {
+        let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+        active.prune_stale();
+        let mut open = false;
+        let mut submitted_at = None;
+        let mut changed = false;
+        for entry in active
+            .sessions
+            .iter_mut()
+            .filter(|entry| normalize_active_path(&entry.path) == path)
+        {
+            open = true;
+            match entry.live_waiter() {
+                Some(other) if other != waiter => return Ok(WaitState::TakenBy(other)),
+                Some(_) => {}
+                None => {
+                    entry.waiter_pid = Some(waiter);
+                    changed = true;
+                }
+            }
+            submitted_at = submitted_at.max(entry.submitted_at);
+        }
+        if changed {
+            save_active_sessions_unlocked(reviews_dir, &active)?;
+        }
+        Ok(if open {
+            WaitState::Waiting { submitted_at }
+        } else {
+            WaitState::NotOpen
+        })
+    })
 }
 
 /// Which running tuicr has a session open, and the agent attached to it.
@@ -487,9 +571,20 @@ struct ActiveSessionEntry {
     /// interprets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<String>,
+    /// The `tuicr review wait` process waiting for this session's `:submit`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    waiter_pid: Option<u32>,
+    /// When `:submit` last notified the waiter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    submitted_at: Option<chrono::DateTime<Utc>>,
 }
 
 impl ActiveSessionEntry {
+    /// The waiter, while its process still runs.
+    fn live_waiter(&self) -> Option<u32> {
+        self.waiter_pid.filter(|pid| process_is_running(*pid))
+    }
+
     fn is_fresh(&self) -> bool {
         let age_is_fresh = Utc::now()
             .signed_duration_since(self.last_seen_at)

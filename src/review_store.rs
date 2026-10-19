@@ -154,6 +154,17 @@ impl ReviewStore {
         Ok((session, stored))
     }
 
+    /// Register `waiter` as the agent waiting on this session's `:submit`;
+    /// see `storage::wait_on_session_in_dir`.
+    pub(crate) fn wait_on(
+        &self,
+        session_ref: &SessionRef,
+        waiter: u32,
+    ) -> Result<storage::WaitState> {
+        let reviews_dir = self.reviews_dir()?;
+        storage::wait_on_session_in_dir(&reviews_dir, session_ref.path(), waiter)
+    }
+
     /// Register `agent` on the running tuicr that has this session open.
     /// Returns false when no running tuicr has it open.
     pub fn attach_agent(&self, session_ref: &SessionRef, agent: &str) -> Result<bool> {
