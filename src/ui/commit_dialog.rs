@@ -19,9 +19,10 @@ pub fn render_commit_dialog(frame: &mut Frame, app: &App) {
     if app.input_mode != InputMode::CommitMessage {
         return;
     }
-    let Some(draft) = app.commit_draft.as_ref() else {
+    let Some(draft) = app.dialog_draft() else {
         return;
     };
+    let rename_target = app.dialog_rename_target();
     let screen = frame.area();
     let width = screen.width.saturating_sub(4).min(80);
     // Title box, description box, staged line, keys line, outer border.
@@ -36,8 +37,12 @@ pub fn render_commit_dialog(frame: &mut Frame, app: &App) {
         height,
     );
     frame.render_widget(Clear, area);
+    let heading = match rename_target {
+        Some(id) => format!(" Rename {} ", id.chars().take(7).collect::<String>()),
+        None => " Commit ".to_string(),
+    };
     let outer = Block::default()
-        .title(" Commit ")
+        .title(heading)
         .borders(Borders::ALL)
         .style(styles::panel_style(&app.theme))
         .border_style(styles::border_style(&app.theme, true));
@@ -78,27 +83,32 @@ pub fn render_commit_dialog(frame: &mut Frame, app: &App) {
         description_area,
     );
 
-    let staged = app.staged_paths();
-    let names: Vec<String> = staged
-        .iter()
-        .map(|path| {
-            path.file_name().map_or_else(
-                || path.display().to_string(),
-                |n| n.to_string_lossy().into_owned(),
-            )
-        })
-        .collect();
-    let staged_line = format!("Staged ({}): {}", staged.len(), names.join(", "));
+    let info_line = match rename_target {
+        Some(_) => "Only the message changes \u{00b7} later commits get new ids".to_string(),
+        None => {
+            let staged = app.staged_paths();
+            let names: Vec<String> = staged
+                .iter()
+                .map(|path| {
+                    path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    )
+                })
+                .collect();
+            format!("Staged ({}): {}", staged.len(), names.join(", "))
+        }
+    };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            staged_line,
+            info_line,
             styles::dim_style(&app.theme),
         ))),
         staged_area,
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "Enter (in title) / Ctrl-S commit \u{00b7} Tab switch \u{00b7} Esc close",
+            "Enter (in title) / Ctrl-S save \u{00b7} Tab switch \u{00b7} Esc close",
             styles::dim_style(&app.theme),
         ))),
         keys_area,
