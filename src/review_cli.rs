@@ -861,6 +861,64 @@ mod tests {
         ));
     }
 
+    /// `tuicr review attach` against this thread's test reviews dir.
+    fn attach(session: &Path, agent: &str) -> Result<String> {
+        let mut out = Vec::new();
+        run_with_writer(
+            ReviewCommand::Attach {
+                session: session.display().to_string(),
+                repo: PathBuf::from("."),
+                agent: agent.to_string(),
+            },
+            &mut out,
+        )?;
+        Ok(String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn should_attach_an_agent_only_while_a_tuicr_has_the_session_open() {
+        // given: a saved local session
+        let temp = tempdir().unwrap();
+        storage::set_test_reviews_dir(Some(temp.path().join("reviews")));
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let session = test_session(repo.clone());
+        let path = storage::save_session(&session).unwrap();
+
+        // when: nothing has it open, attach is refused
+        let err = attach(&path, "w1N:p1").unwrap_err();
+        assert!(err.to_string().contains("no running tuicr"), "{err}");
+
+        // when: a tuicr opens it
+        storage::mark_session_active(&session, &path).unwrap();
+        let out = attach(&path, "w1N:p1").unwrap();
+
+        // then: attach succeeds, and the listing names the agent
+        let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(value["agent"], "w1N:p1");
+        let mut listed = Vec::new();
+        list_sessions(&repo, false, &mut listed).unwrap();
+        let listed: serde_json::Value = serde_json::from_slice(&listed).unwrap();
+        assert_eq!(listed[0]["active"], true);
+        assert_eq!(listed[0]["pid"], std::process::id());
+        assert_eq!(listed[0]["agent"], "w1N:p1");
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
+    fn should_refuse_to_attach_an_agent_to_a_pr_session() {
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let store = ReviewStore::with_reviews_dir(reviews);
+        let session_ref = save_pr_session(&store);
+
+        let err = attach(session_ref.path(), "w1N:p1").unwrap_err();
+
+        assert!(err.to_string().contains("local reviews only"), "{err}");
+        storage::set_test_reviews_dir(None);
+    }
+
     fn save_pr_session(store: &ReviewStore) -> SessionRef {
         use crate::forge::traits::{ForgeRepository, PrSessionKey};
 

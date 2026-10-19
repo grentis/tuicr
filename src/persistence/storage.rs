@@ -1333,6 +1333,109 @@ mod tests {
         assert!(!active.contains(&normalize_path_for_comparison(&path)));
     }
 
+    fn running_session() -> (PathBuf, PathBuf, ReviewSession) {
+        let reviews_dir = get_reviews_dir().unwrap();
+        let session = make_local_session(
+            make_repo(),
+            "abc1234",
+            Some("main"),
+            SessionDiffSource::Branch,
+            None,
+        );
+        let path = save_session(&session).unwrap();
+        mark_session_active_in_dir(&session, &path, &reviews_dir).unwrap();
+        (reviews_dir, path, session)
+    }
+
+    #[test]
+    fn should_attach_an_agent_and_keep_it_when_the_session_saves_again() {
+        // given: a session this process has open
+        let _g = with_test_reviews_dir();
+        let (reviews_dir, path, session) = running_session();
+
+        // when: an agent attaches, then tuicr saves the session again
+        assert!(attach_agent_in_dir(&reviews_dir, &path, "w1N:p1").unwrap());
+        mark_session_active_in_dir(&session, &path, &reviews_dir).unwrap();
+
+        // then: the agent is still there, for this process and in listings
+        let pid = std::process::id();
+        assert_eq!(
+            attached_agent_for_pid_in_dir(&reviews_dir, pid).unwrap(),
+            Some("w1N:p1".to_string())
+        );
+        let owners = active_session_owners_in_dir(&reviews_dir).unwrap();
+        assert_eq!(
+            owners.get(&normalize_path_for_comparison(&path)),
+            Some(&ActiveSessionOwner {
+                pid,
+                agent: Some("w1N:p1".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn should_replace_the_agent_when_another_attaches() {
+        let _g = with_test_reviews_dir();
+        let (reviews_dir, path, _session) = running_session();
+
+        attach_agent_in_dir(&reviews_dir, &path, "w1N:p1").unwrap();
+        attach_agent_in_dir(&reviews_dir, &path, "w1N:p4").unwrap();
+
+        assert_eq!(
+            attached_agent_for_pid_in_dir(&reviews_dir, std::process::id()).unwrap(),
+            Some("w1N:p4".to_string())
+        );
+    }
+
+    #[test]
+    fn should_not_attach_to_a_session_no_tuicr_has_open() {
+        let _g = with_test_reviews_dir();
+        let reviews_dir = get_reviews_dir().unwrap();
+        let session = make_local_session(
+            make_repo(),
+            "abc1234",
+            Some("main"),
+            SessionDiffSource::Branch,
+            None,
+        );
+        let path = save_session(&session).unwrap();
+
+        assert!(!attach_agent_in_dir(&reviews_dir, &path, "w1N:p1").unwrap());
+        assert!(
+            active_session_owners_in_dir(&reviews_dir)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn should_keep_a_long_running_session_active_with_the_heartbeat() {
+        // given: a registration older than the stale limit
+        let _g = with_test_reviews_dir();
+        let (reviews_dir, path, _session) = running_session();
+        let mut active = load_active_sessions_unlocked(&reviews_dir).unwrap();
+        for entry in &mut active.sessions {
+            entry.last_seen_at = Utc::now() - chrono::Duration::hours(13);
+        }
+        save_active_sessions_unlocked(&reviews_dir, &active).unwrap();
+        let key = normalize_path_for_comparison(&path);
+        assert!(
+            !active_session_paths_in_dir(&reviews_dir)
+                .unwrap()
+                .contains(&key)
+        );
+
+        // when
+        touch_active_session_for_pid_in_dir(&reviews_dir, std::process::id()).unwrap();
+
+        // then
+        assert!(
+            active_session_paths_in_dir(&reviews_dir)
+                .unwrap()
+                .contains(&key)
+        );
+    }
+
     #[test]
     fn should_recover_stale_reviews_dir_lock() {
         let _g = with_test_reviews_dir();
