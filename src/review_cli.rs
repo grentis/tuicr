@@ -1321,6 +1321,60 @@ mod tests {
     }
 
     #[test]
+    fn should_report_done_covering_the_agents_last_read() {
+        // given: a local session a tuicr (this process) has open
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let session = test_session(temp.path().join("repo"));
+        let path = storage::save_session(&session).unwrap();
+        storage::mark_session_active(&session, &path).unwrap();
+
+        // when: the agent reads what waits on it, then reports done
+        comments(&path, Some("ai-agent"));
+        let done = run(ReviewCommand::Done {
+            session: path.display().to_string(),
+            repo: PathBuf::from("."),
+            message: Some("3 threads answered".to_string()),
+        })
+        .unwrap();
+
+        // then: the done covers that read
+        assert_eq!(done["message"], "3 threads answered");
+        let progress = storage::agent_progress_for_pid_in_dir(&reviews, std::process::id())
+            .unwrap()
+            .unwrap();
+        let done = progress.done.unwrap();
+        assert!(done.covers.is_some());
+        assert!(done.covers <= Some(done.at));
+        assert_eq!(done.message.as_deref(), Some("3 threads answered"));
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
+    fn should_refuse_done_for_a_pr_or_unopened_session() {
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let store = ReviewStore::with_reviews_dir(reviews);
+        let pr = save_pr_session(&store);
+        let local = storage::save_session(&test_session(temp.path().join("repo"))).unwrap();
+        let done = |session: &Path| {
+            run(ReviewCommand::Done {
+                session: session.display().to_string(),
+                repo: PathBuf::from("."),
+                message: None,
+            })
+            .unwrap_err()
+            .to_string()
+        };
+
+        assert!(done(pr.path()).contains("local reviews only"));
+        assert!(done(&local).contains("no running tuicr"));
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
     fn should_refuse_to_wait_on_a_pr_or_unopened_session() {
         let temp = tempdir().unwrap();
         let reviews = temp.path().join("reviews");
