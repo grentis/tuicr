@@ -1,9 +1,10 @@
 //! `:submit` in a local review: tell the agent working on this checkout.
 //!
-//! `[agent] send_command` runs, with the id from `tuicr review attach` in
-//! `TUICR_AGENT` and the slug in `TUICR_SESSION`; only the command interprets
-//! the id. It runs on a background thread, so a hung command never freezes
-//! the review. PR reviews never send.
+//! A `tuicr review wait` on the session is told through its registration.
+//! Otherwise `[agent] send_command` runs, with the id from
+//! `tuicr review attach` in `TUICR_AGENT` and the slug in `TUICR_SESSION`;
+//! only the command interprets the id. It runs on a background thread, so a
+//! hung command never freezes the review. PR reviews never send.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -58,6 +59,22 @@ impl App {
             let _ = tx.send(run_send_command(&command, &root, &slug, &agent));
         });
         self.set_message("Sending to the agent\u{2026}");
+    }
+
+    /// Tell the agent waiting on this session. Returns false only when none
+    /// waits.
+    pub(in crate::app) fn notify_waiting_agent(&mut self) -> bool {
+        match crate::persistence::storage::notify_waiter_for_pid() {
+            Ok(true) => {
+                self.set_message("Submitted to the agent");
+                true
+            }
+            Ok(false) => false,
+            Err(e) => {
+                self.set_error(format!("Could not reach the waiting agent: {e}"));
+                true
+            }
+        }
     }
 
     /// Report a finished send. Returns whether a repaint is needed.
