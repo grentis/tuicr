@@ -2145,6 +2145,14 @@ mod command_tests {
     }
 
     #[test]
+    fn parses_commit_command() {
+        assert_eq!(
+            command_spec_for("commit").map(|spec| spec.kind),
+            Some(CommandKind::Commit)
+        );
+    }
+
+    #[test]
     fn parses_uncommitted_command() {
         assert_eq!(
             command_spec_for("uncommitted").map(|spec| spec.kind),

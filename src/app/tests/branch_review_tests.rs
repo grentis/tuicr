@@ -42,6 +42,8 @@ struct BranchState {
     committed_hash: u64,
     /// Files the combined diff returns; empty means `committed.py` and `wip.py`.
     diff_paths: Vec<String>,
+    /// Nothing uncommitted: the commit pane has no staged or unstaged row.
+    clean: bool,
     /// Paths whose index differs from HEAD.
     staged: Vec<PathBuf>,
     /// Paths whose working tree differs from the index.
@@ -67,7 +69,7 @@ impl VcsBackend for BranchVcs {
     fn get_change_status(&self) -> Result<VcsChangeStatus> {
         Ok(VcsChangeStatus {
             staged: false,
-            unstaged: true,
+            unstaged: !self.state.lock().unwrap().clean,
         })
     }
 
@@ -637,4 +639,190 @@ fn should_update_only_the_staging_rows_after_staging() {
     assert_eq!(commit_rows(&app), ["c1"]);
     // Commits were not re-read.
     assert_eq!(state.lock().unwrap().resolved.len(), resolved_before);
+}
+
+fn press(app: &mut App, code: crossterm::event::KeyCode) {
+    crate::handler::handle_commit_message_key(
+        app,
+        crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE),
+    );
+}
+
+fn type_text(app: &mut App, text: &str) {
+    for c in text.chars() {
+        press(app, crossterm::event::KeyCode::Char(c));
+    }
+}
+
+#[test]
+fn should_refuse_to_open_the_commit_dialog_with_nothing_staged() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.toggle_staged_for_file_idx(file_idx(&app, "staged.py"));
+
+    app.open_commit_dialog();
+
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("Nothing staged")
+    );
+}
+
+#[test]
+fn should_write_a_title_and_a_multi_line_description() {
+    use crossterm::event::KeyCode;
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+
+    app.open_commit_dialog();
+    assert_eq!(app.input_mode, InputMode::CommitMessage);
+    type_text(&mut app, "Fix it");
+    press(&mut app, KeyCode::Tab);
+    type_text(&mut app, "first");
+    press(&mut app, KeyCode::Enter);
+    type_text(&mut app, "second");
+    press(&mut app, KeyCode::Up);
+    press(&mut app, KeyCode::End);
+    type_text(&mut app, "!");
+
+    let draft = app.commit_draft.as_ref().unwrap();
+    assert_eq!(draft.title, "Fix it");
+    assert_eq!(draft.description, "first!\nsecond");
+    assert_eq!(draft.message(), "Fix it\n\nfirst!\nsecond");
+    // Enter in the description adds a line; it does not commit.
+    assert_eq!(app.input_mode, InputMode::CommitMessage);
+}
+
+#[test]
+fn should_refuse_to_commit_without_a_title() {
+    use crossterm::event::KeyCode;
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.open_commit_dialog();
+
+    press(&mut app, KeyCode::Enter);
+
+    assert_eq!(app.input_mode, InputMode::CommitMessage);
+    assert!(app.commit_rx.is_none());
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("needs a title")
+    );
+}
+
+#[test]
+fn should_keep_the_draft_when_the_dialog_closes() {
+    use crossterm::event::KeyCode;
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.open_commit_dialog();
+    type_text(&mut app, "Later");
+
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(app.input_mode, InputMode::Normal);
+    app.open_commit_dialog();
+
+    assert_eq!(app.commit_draft.as_ref().unwrap().title, "Later");
+}
+
+#[test]
+fn should_clear_the_draft_and_refresh_after_a_commit() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.open_commit_dialog();
+    type_text(&mut app, "Ship it");
+    app.close_commit_dialog();
+    {
+        // The repository after committing staged.py.
+        let mut state = state.lock().unwrap();
+        state.commit_ids.push("c2".into());
+        state.staged.clear();
+    }
+
+    app.finish_commit(Ok("c2abcdef0123".into()));
+
+    assert!(app.commit_draft.is_none());
+    assert_eq!(commit_rows(&app), ["c2", "c1"]);
+    assert!(
+        app.git_file_state(Path::new("staged.py"))
+            .unwrap()
+            .committed()
+    );
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("Committed c2abcde Ship it")
+    );
+}
+
+#[test]
+fn should_show_the_whole_branch_after_committing_from_the_uncommitted_rows() {
+    // given: the review narrowed to its unstaged row
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    let unstaged = app
+        .review_commits
+        .iter()
+        .position(App::is_unstaged_commit)
+        .expect("unstaged row");
+    app.commit_selection_range = Some((unstaged, unstaged));
+    app.reload_diff_files().expect(":e");
+    assert_eq!(app.diff_files.len(), 1);
+    app.open_commit_dialog();
+    type_text(&mut app, "Ship it");
+    app.close_commit_dialog();
+
+    // when: committing everything uncommitted
+    {
+        let mut state = state.lock().unwrap();
+        state.commit_ids.push("c2".into());
+        state.staged.clear();
+        state.unstaged.clear();
+        state.clean = true;
+    }
+    app.finish_commit(Ok("c2abcdef0123".into()));
+
+    // then: the unstaged row is gone and the tree widens to every commit
+    assert_eq!(commit_rows(&app), ["c2", "c1"]);
+    assert!(!App::is_strict_commit_selection(
+        app.commit_selection_range,
+        app.review_commits.len()
+    ));
+    assert_eq!(app.diff_files.len(), 3);
+}
+
+#[test]
+fn should_keep_the_draft_when_a_commit_fails() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.open_commit_dialog();
+    type_text(&mut app, "Ship it");
+    app.close_commit_dialog();
+
+    app.finish_commit(Err("hook says no".into()));
+
+    assert_eq!(app.commit_draft.as_ref().unwrap().title, "Ship it");
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("hook says no")
+    );
 }
