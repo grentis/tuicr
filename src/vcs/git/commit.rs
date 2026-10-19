@@ -292,4 +292,67 @@ mod tests {
 
         assert!(error.to_string().contains("nothing"), "{error}");
     }
+
+    fn commit_file(dir: &Path, name: &str, content: &str, message: &str) -> String {
+        std::fs::write(dir.join(name), content).unwrap();
+        git(dir, &["add", name]);
+        git(dir, &["commit", "-q", "-m", message]);
+        git(dir, &["rev-parse", "HEAD"])
+    }
+
+    #[test]
+    fn should_rename_the_latest_commit_by_amending_its_message() {
+        let dir = repo();
+        let old = commit_file(dir.path(), "b.txt", "b\n", "Old title");
+
+        let rewritten = reword_commit(dir.path(), &old, "New title\n\nWith a body").unwrap();
+
+        let head = git(dir.path(), &["rev-parse", "HEAD"]);
+        assert_eq!(rewritten, vec![(old, head)]);
+        assert_eq!(
+            git(dir.path(), &["log", "-1", "--format=%B"]),
+            "New title\n\nWith a body"
+        );
+    }
+
+    #[test]
+    fn should_rename_an_older_commit_and_keep_the_later_ones_and_the_worktree() {
+        let dir = repo();
+        let root = dir.path();
+        let first = commit_file(root, "b.txt", "b\n", "First");
+        let second = commit_file(root, "c.txt", "c\n", "Second\n\nkept body");
+        let trees_before = git(root, &["log", "--format=%T", "-2"]);
+        // Uncommitted work, staged and unstaged, must come through untouched.
+        std::fs::write(root.join("b.txt"), "staged\n").unwrap();
+        git(root, &["add", "b.txt"]);
+        std::fs::write(root.join("c.txt"), "unstaged\n").unwrap();
+
+        let rewritten = reword_commit(root, &first, "First, renamed").unwrap();
+
+        assert_eq!(rewritten.len(), 2);
+        assert_eq!(rewritten[0].0, first);
+        assert_eq!(rewritten[1].0, second);
+        assert_eq!(rewritten[1].1, git(root, &["rev-parse", "HEAD"]));
+        assert_eq!(
+            git(root, &["log", "--format=%s", "-3"]),
+            "Second\nFirst, renamed\nbase"
+        );
+        assert_eq!(
+            git(root, &["log", "-1", "--format=%B"]),
+            "Second\n\nkept body"
+        );
+        assert_eq!(git(root, &["log", "--format=%T", "-2"]), trees_before);
+        assert_eq!(git(root, &["status", "--short"]), "M  b.txt\n M c.txt");
+    }
+
+    #[test]
+    fn should_refuse_to_rename_the_first_commit() {
+        let dir = repo();
+        let first = git(dir.path(), &["rev-list", "--max-parents=0", "HEAD"]);
+        commit_file(dir.path(), "b.txt", "b\n", "Later");
+
+        let error = reword_commit(dir.path(), &first, "Renamed").unwrap_err();
+
+        assert!(error.to_string().contains("first commit"), "{error}");
+    }
 }
