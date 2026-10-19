@@ -2386,6 +2386,26 @@ comment_type_prefix = false
     }
 
     #[test]
+    fn should_read_git_user_name_from_the_given_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .current_dir(dir.path())
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.name", "Repo Reviewer"]);
+
+        assert_eq!(
+            git_user_name(Some(dir.path())).as_deref(),
+            Some("Repo Reviewer")
+        );
+    }
+
+    #[test]
     fn should_parse_the_agent_send_command() {
         let outcome = parse_config(
             r#"[agent]

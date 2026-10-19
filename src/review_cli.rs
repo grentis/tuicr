@@ -1024,6 +1024,148 @@ mod tests {
         storage::set_test_reviews_dir(None);
     }
 
+    fn run(command: ReviewCommand) -> Result<serde_json::Value> {
+        let mut out = Vec::new();
+        run_with_writer(command, &mut out)?;
+        Ok(serde_json::from_slice(&out).unwrap())
+    }
+
+    fn reply(
+        session: &Path,
+        parent: &str,
+        username: &str,
+        text: &str,
+    ) -> Result<serde_json::Value> {
+        run(ReviewCommand::Add {
+            session: session.display().to_string(),
+            input: None,
+            repo: PathBuf::from("."),
+            comment_type: "none".to_string(),
+            file: None,
+            line: None,
+            end_line: None,
+            side: LineSideArg::New,
+            username: Some(username.to_string()),
+            reply_to: Some(parent.to_string()),
+            content: Some(text.to_string()),
+        })
+    }
+
+    fn comments(session: &Path, needs_reply: Option<&str>) -> Vec<String> {
+        let listed = run(ReviewCommand::Comments {
+            session: session.display().to_string(),
+            repo: PathBuf::from("."),
+            needs_reply: needs_reply.map(str::to_string),
+        })
+        .unwrap();
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}: {}",
+                    c["author"].as_str().unwrap(),
+                    c["content"].as_str().unwrap()
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn should_reply_in_a_thread_and_list_only_the_threads_waiting_on_the_agent() {
+        // given: two line comments by the user
+        let temp = tempdir().unwrap();
+        storage::set_test_reviews_dir(Some(temp.path().join("reviews")));
+        let mut session = test_session(temp.path().join("repo"));
+        let review = session.get_file_mut(&PathBuf::from("src/main.rs")).unwrap();
+        let first = Comment::new(
+            "rename it".into(),
+            CommentType::default(),
+            Some(LineSide::New),
+        );
+        let first_id = first.id.clone();
+        review.add_line_comment(7, first);
+        review.add_line_comment(
+            9,
+            Comment::new(
+                "test it".into(),
+                CommentType::default(),
+                Some(LineSide::New),
+            ),
+        );
+        let path = storage::save_session(&session).unwrap();
+        let waiting = || comments(&path, Some("ai-agent"));
+        assert_eq!(waiting(), ["user: rename it", "user: test it"]);
+
+        // when: the agent answers the first
+        let answer = reply(&path, &first_id, "ai-agent", "renamed").unwrap();
+
+        // then: the reply is on its thread's line, and that thread is done
+        assert_eq!(answer["location"], "src/main.rs:7");
+        assert_eq!(answer["reply_to"], first_id.as_str());
+        assert_eq!(waiting(), ["user: test it"]);
+
+        // when: a teammate answers back, the thread waits again, whole
+        reply(
+            &path,
+            answer["id"].as_str().unwrap(),
+            "alice",
+            "not like that",
+        )
+        .unwrap();
+        assert_eq!(
+            waiting(),
+            [
+                "user: rename it",
+                "ai-agent: renamed",
+                "alice: not like that",
+                "user: test it"
+            ]
+        );
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
+    fn should_not_hand_the_agent_its_own_comments() {
+        // given: a comment the agent started, nobody has answered
+        let temp = tempdir().unwrap();
+        storage::set_test_reviews_dir(Some(temp.path().join("reviews")));
+        let mut session = test_session(temp.path().join("repo"));
+        let review = session.get_file_mut(&PathBuf::from("src/main.rs")).unwrap();
+        review.add_line_comment(
+            7,
+            Comment::new("found a bug".into(), CommentType::default(), None)
+                .with_author("ai-agent".to_string()),
+        );
+        let path = storage::save_session(&session).unwrap();
+
+        // then: nothing waits on the agent, though the user's view still has it
+        assert!(comments(&path, Some("ai-agent")).is_empty());
+        assert_eq!(comments(&path, None), ["ai-agent: found a bug"]);
+        storage::set_test_reviews_dir(None);
+    }
+
+    #[test]
+    fn should_refuse_a_reply_in_a_pr_session_or_to_a_missing_comment() {
+        let temp = tempdir().unwrap();
+        let reviews = temp.path().join("reviews");
+        storage::set_test_reviews_dir(Some(reviews.clone()));
+        let store = ReviewStore::with_reviews_dir(reviews);
+        let pr = save_pr_session(&store);
+        let local = storage::save_session(&test_session(temp.path().join("repo"))).unwrap();
+
+        let in_pr = reply(pr.path(), "any", "Claude", "hi").unwrap_err();
+        let missing = reply(&local, "nope", "Claude", "hi").unwrap_err();
+
+        assert!(in_pr.to_string().contains("local comments only"), "{in_pr}");
+        assert!(
+            missing.to_string().contains("no comment with id"),
+            "{missing}"
+        );
+        storage::set_test_reviews_dir(None);
+    }
+
     fn save_pr_session(store: &ReviewStore) -> SessionRef {
         use crate::forge::traits::{ForgeRepository, PrSessionKey};
 
