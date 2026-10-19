@@ -152,6 +152,18 @@ impl VcsBackend for BranchVcs {
         Ok(())
     }
 
+    /// As if the file were new: discarding takes it out of the review.
+    fn discard_file(&self, path: &Path) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .staging_calls
+            .push(format!("discard {}", path.display()));
+        state.staged.retain(|p| p != path);
+        state.unstaged.retain(|p| p != path);
+        state.diff_paths.retain(|p| Path::new(p) != path);
+        Ok(())
+    }
+
     /// A narrowed selection diffs only its commits.
     fn get_commit_range_diff(
         &self,
@@ -621,6 +633,110 @@ fn staging_rows(app: &App) -> Vec<String> {
         .filter(|c| App::is_special_commit(c))
         .map(|c| c.summary.clone())
         .collect()
+}
+
+#[test]
+fn should_ask_before_discarding_a_file_and_discard_on_yes() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+
+    // when `d` asks
+    app.request_discard_for_file_idx(file_idx(&app, "wip.py"));
+
+    // then nothing happens yet
+    assert_eq!(app.input_mode, InputMode::Confirm);
+    assert_eq!(app.pending_confirm, Some(ConfirmAction::DiscardChanges));
+    assert_eq!(
+        ConfirmAction::DiscardChanges.prompt(),
+        "Discard all changes?"
+    );
+    assert!(staging_calls(&state).is_empty());
+
+    // when the answer is yes
+    crate::handler::handle_confirm_action(&mut app, crate::input::Action::ConfirmYes);
+
+    // then it is discarded and the review reloaded, without quitting
+    assert_eq!(staging_calls(&state), ["discard wip.py"]);
+    assert!(
+        app.diff_files
+            .iter()
+            .all(|file| file.display_path() != Path::new("wip.py"))
+    );
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.pending_discard.is_none());
+    assert!(!app.should_quit);
+    assert_eq!(
+        app.message.as_ref().unwrap().content,
+        "Discarded the changes to wip.py"
+    );
+}
+
+#[test]
+fn should_keep_everything_when_the_discard_is_declined() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.request_discard_for_file_idx(file_idx(&app, "staged.py"));
+
+    // when
+    crate::handler::handle_confirm_action(&mut app, crate::input::Action::ConfirmNo);
+
+    // then
+    assert!(staging_calls(&state).is_empty());
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.pending_discard.is_none());
+    assert!(!app.should_quit);
+}
+
+#[test]
+fn should_not_ask_to_discard_a_file_without_uncommitted_changes() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+
+    // when
+    app.request_discard_for_file_idx(file_idx(&app, "committed.py"));
+
+    // then
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("no uncommitted changes")
+    );
+}
+
+#[test]
+fn should_discard_every_uncommitted_file_in_a_directory() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    {
+        let mut state = state.lock().unwrap();
+        state.diff_paths = vec!["src/a.py".into(), "src/b.py".into(), "src/done.py".into()];
+        state.staged = vec![PathBuf::from("src/b.py")];
+        state.unstaged = vec![PathBuf::from("src/a.py")];
+    }
+    let mut app = open(&state, Some("feature")).expect("open branch review");
+    app.git_actions = true;
+    app.refresh_git_file_states();
+
+    // when
+    app.request_discard_for_directory("src");
+    assert_eq!(app.input_mode, InputMode::Confirm);
+    crate::handler::handle_confirm_action(&mut app, crate::input::Action::ConfirmYes);
+
+    // then the committed-only file is left alone
+    assert_eq!(
+        staging_calls(&state),
+        ["discard src/a.py", "discard src/b.py"]
+    );
+    assert_eq!(
+        app.message.as_ref().unwrap().content,
+        "Discarded the changes to 2 files in src/"
+    );
 }
 
 #[test]

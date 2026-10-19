@@ -312,4 +312,74 @@ mod tests {
             (false, false)
         );
     }
+
+    /// Whether `path` has any change, staged or not, after a re-read.
+    fn changed(root: &Path, path: &str) -> bool {
+        let repo = Repository::open(root).unwrap();
+        let status = path_change_status(&repo, Path::new(path)).unwrap();
+        status.staged || status.unstaged
+    }
+
+    #[test]
+    fn discard_file_restores_staged_and_unstaged_edits_from_head() {
+        // given a committed file edited, part staged and part not
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        create_initial_commit(&repo, "a.txt", "committed\n");
+        fs::write(dir.path().join("a.txt"), "staged\n").unwrap();
+        stage_file(&repo, Path::new("a.txt")).unwrap();
+        fs::write(dir.path().join("a.txt"), "unstaged\n").unwrap();
+        // when
+        discard_file(dir.path(), Path::new("a.txt")).unwrap();
+        // then
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "committed\n"
+        );
+        assert!(!changed(dir.path(), "a.txt"));
+    }
+
+    #[test]
+    fn discard_file_deletes_new_files_staged_or_untracked() {
+        // given a staged new file and an untracked one
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        create_initial_commit(&repo, "a.txt", "committed\n");
+        fs::write(dir.path().join("staged.txt"), "new\n").unwrap();
+        stage_file(&repo, Path::new("staged.txt")).unwrap();
+        fs::write(dir.path().join("untracked.txt"), "new\n").unwrap();
+        // when
+        discard_file(dir.path(), Path::new("staged.txt")).unwrap();
+        discard_file(dir.path(), Path::new("untracked.txt")).unwrap();
+        // then both are gone, from disk and from the index
+        assert!(!dir.path().join("staged.txt").exists());
+        assert!(!dir.path().join("untracked.txt").exists());
+        assert!(!changed(dir.path(), "staged.txt"));
+        assert!(
+            Repository::open(dir.path())
+                .unwrap()
+                .index()
+                .unwrap()
+                .get_path(Path::new("staged.txt"), 0)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn discard_file_brings_back_a_deleted_file() {
+        // given a committed file deleted, and the deletion staged
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        create_initial_commit(&repo, "gone.txt", "committed\n");
+        fs::remove_file(dir.path().join("gone.txt")).unwrap();
+        stage_file(&repo, Path::new("gone.txt")).unwrap();
+        // when
+        discard_file(dir.path(), Path::new("gone.txt")).unwrap();
+        // then
+        assert_eq!(
+            fs::read_to_string(dir.path().join("gone.txt")).unwrap(),
+            "committed\n"
+        );
+        assert!(!changed(dir.path(), "gone.txt"));
+    }
 }
