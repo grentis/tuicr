@@ -311,6 +311,18 @@ pub enum ReviewCommand {
         #[arg(long, value_name = "ID", value_parser = non_empty_comment_text)]
         agent: String,
     },
+    /// Wait, as the agent on a local review, until the user runs `:submit`
+    /// in the tuicr that has it open, then print the session. Meant to run
+    /// in the background.
+    Wait {
+        /// Session slug from `tuicr review list`, or path to a session JSON
+        /// file. Local sessions only.
+        #[arg(long, value_name = "SESSION")]
+        session: String,
+        /// Repo selector used to resolve a local session slug.
+        #[arg(long, value_name = "PATH|OWNER/REPO", default_value = ".")]
+        repo: PathBuf,
+    },
     /// Print comments stored in a persisted session.
     #[command(alias = "get")]
     Comments {

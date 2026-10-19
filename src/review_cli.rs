@@ -98,6 +98,7 @@ fn run_with_writer(command: ReviewCommand, out: &mut impl Write) -> Result<()> {
             repo,
             agent,
         } => attach_agent(&session, &repo, &agent, out),
+        ReviewCommand::Wait { session, repo } => wait_for_submit(&session, &repo, out),
     }
 }
 
@@ -186,6 +187,67 @@ fn attach_agent(session: &str, repo: &Path, agent: &str, out: &mut impl Write) -
     serde_json::to_writer_pretty(&mut *out, &output)?;
     writeln!(out)?;
     Ok(())
+}
+
+/// How often `review wait` looks at the session's registration.
+const WAIT_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// `tuicr review wait`: register as the session's waiter and return on
+/// `:submit`. Errors if the tuicr closes or another agent takes over.
+fn wait_for_submit(session: &str, repo: &Path, out: &mut impl Write) -> Result<()> {
+    let store = ReviewStore::new();
+    let session_ref = resolve_session_ref(&store, repo, session)?;
+    if store.get_review(&session_ref)?.pr_session_key.is_some() {
+        return Err(TuicrError::InvalidInput(format!(
+            "'{session}' is a PR session; agents wait on local reviews only"
+        )));
+    }
+    let me = std::process::id();
+    let mut since = None;
+    let mut first = true;
+    loop {
+        match store.wait_on(&session_ref, me)? {
+            storage::WaitState::TakenBy(other) => {
+                return Err(TuicrError::InvalidInput(format!(
+                    "another agent is waiting on '{session}' (process {other})"
+                )));
+            }
+            storage::WaitState::NotOpen if first => {
+                return Err(TuicrError::InvalidInput(format!(
+                    "no running tuicr has '{session}' open. Start it first, then wait."
+                )));
+            }
+            storage::WaitState::NotOpen => {
+                return Err(TuicrError::InvalidInput(format!(
+                    "the tuicr reviewing '{session}' was closed"
+                )));
+            }
+            storage::WaitState::Waiting { submitted_at } => {
+                // Only a `:submit` after the first look counts.
+                if first {
+                    since = submitted_at;
+                } else if submitted_at > since {
+                    let output = WaitOutput {
+                        session: session.to_string(),
+                        path: session_ref.path().display().to_string(),
+                        submitted_at: submitted_at.map(|at| at.to_rfc3339()),
+                    };
+                    serde_json::to_writer_pretty(&mut *out, &output)?;
+                    writeln!(out)?;
+                    return Ok(());
+                }
+            }
+        }
+        first = false;
+        std::thread::sleep(WAIT_POLL);
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct WaitOutput {
+    session: String,
+    path: String,
+    submitted_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

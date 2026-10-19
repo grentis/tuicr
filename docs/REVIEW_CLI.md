@@ -31,6 +31,7 @@ tuicr review list --all                               # every session across all
 tuicr review comments --session agavra/tuicr@main/worktree
 tuicr review comments --session gh:slatedb/slatedb/pr/1745
 tuicr review attach --session agavra/tuicr@main/branch --agent w1N:p1
+tuicr review wait --session agavra/tuicr@main/branch
 ```
 
 All `tuicr review` commands emit JSON by default. Timestamps are RFC3339 strings
@@ -82,8 +83,23 @@ slug; PR slugs and JSON paths ignore it.
 
 ## Agents
 
-An agent working on a checkout can register itself on the tuicr reviewing it,
-so `:submit` there tells it there is something to do:
+An agent working on a checkout can wait for the user's `:submit` in the tuicr
+reviewing it, in the background:
+
+```bash
+tuicr review wait --repo . --session agavra/tuicr@main/branch
+#   -> { "session": "...", "path": "...", "submitted_at": "2026-10-17T00:55:00Z" }
+```
+
+It registers as the session's waiting agent and returns once `:submit` runs
+in that tuicr, printing the session; the agent then reads the comments and
+starts the wait again. Nothing is typed into the agent's terminal. It looks
+once a second, fails at once when no running tuicr has the session open, when
+another agent is already waiting on it, and for PR sessions, and stops with an
+error when the tuicr is closed.
+
+Without a waiting agent, `:submit` falls back to `[agent] send_command`. For
+that, an agent registers an id instead:
 
 ```bash
 tuicr review attach --repo . --session agavra/tuicr@main/branch --agent w1N:p1
