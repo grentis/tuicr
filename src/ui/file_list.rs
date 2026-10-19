@@ -558,6 +558,20 @@ mod tests {
     }
 
     #[test]
+    fn should_announce_the_uncommitted_only_view_in_the_border() {
+        let mut app = app_with(&["src/main.rs", "README.md"]);
+        assert!(!buffer_text(&draw(&mut app)).contains("uncommitted only"));
+
+        app.file_filter.only_uncommitted = true;
+        let text = buffer_text(&draw(&mut app));
+
+        assert!(
+            text.contains("uncommitted only"),
+            "expected the uncommitted-only cue in the tree border, got:\n{text}"
+        );
+    }
+
+    #[test]
     fn should_keep_the_progress_fraction_in_the_title_while_hiding_reviewed_files() {
         let mut app = app_with(&["src/main.rs", "README.md"]);
         let reviewed = app
