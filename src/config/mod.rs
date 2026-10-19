@@ -2295,6 +2295,13 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_git_actions() {
+        let outcome = parse_config("git_actions = true\n");
+        assert_eq!(outcome.config.and_then(|cfg| cfg.git_actions), Some(true));
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
     fn should_parse_branch_base() {
         let outcome = parse_config("branch_base = \"develop\"\n");
         assert_eq!(

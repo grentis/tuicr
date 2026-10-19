@@ -118,6 +118,38 @@ mod tests {
     }
 
     #[test]
+    fn unstage_file_keeps_what_was_staged_outside_an_open_handle() {
+        // given: a handle that has read the index, then two files staged by another process
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
+        create_initial_commit(&repo, "a.txt", "one\n");
+        fs::write(temp_dir.path().join("a.txt"), "two\n").unwrap();
+        fs::write(temp_dir.path().join("b.txt"), "new\n").unwrap();
+        repo.index().unwrap();
+        let status = std::process::Command::new("git")
+            .current_dir(temp_dir.path())
+            .args(["add", "a.txt", "b.txt"])
+            .status()
+            .expect("git add");
+        assert!(status.success());
+
+        // when: one of them is unstaged through the handle
+        unstage_file(&repo, Path::new("b.txt")).unwrap();
+
+        // then: the other stays staged
+        let reopened = Repository::open(temp_dir.path()).expect("failed to reopen repo");
+        let head_tree = reopened.head().unwrap().peel_to_tree().unwrap();
+        let index = reopened.index().unwrap();
+        let staged: Vec<_> = reopened
+            .diff_tree_to_index(Some(&head_tree), Some(&index), None)
+            .unwrap()
+            .deltas()
+            .filter_map(|delta| delta.new_file().path().map(Path::to_path_buf))
+            .collect();
+        assert_eq!(staged, [Path::new("a.txt")]);
+    }
+
+    #[test]
     fn stage_file_adds_to_index() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
@@ -155,5 +187,90 @@ mod tests {
             .expect("failed to diff HEAD against index");
         let delta = diff.deltas().next().expect("expected staged deletion");
         assert_eq!(delta.status(), git2::Delta::Deleted);
+    }
+
+    #[test]
+    fn unstage_file_puts_the_head_version_back_in_the_index() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
+        create_initial_commit(&repo, "test.txt", "hello\n");
+        fs::write(temp_dir.path().join("test.txt"), "changed\n").unwrap();
+        stage_file(&repo, Path::new("test.txt")).unwrap();
+
+        unstage_file(&repo, Path::new("test.txt")).unwrap();
+
+        let statuses = repo.statuses(None).unwrap();
+        let status = statuses.get(0).unwrap().status();
+        assert!(status.contains(git2::Status::WT_MODIFIED));
+        assert!(!status.contains(git2::Status::INDEX_MODIFIED));
+    }
+
+    #[test]
+    fn unstage_file_drops_a_new_file_from_the_index() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
+        create_initial_commit(&repo, "test.txt", "hello\n");
+        fs::write(temp_dir.path().join("new.txt"), "new\n").unwrap();
+        stage_file(&repo, Path::new("new.txt")).unwrap();
+
+        unstage_file(&repo, Path::new("new.txt")).unwrap();
+
+        let index = repo.index().unwrap();
+        assert!(index.get_path(Path::new("new.txt"), 0).is_none());
+        assert!(temp_dir.path().join("new.txt").exists());
+    }
+
+    #[test]
+    fn unstage_file_works_before_the_first_commit() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
+        fs::write(temp_dir.path().join("test.txt"), "hello\n").unwrap();
+        stage_file(&repo, Path::new("test.txt")).unwrap();
+
+        unstage_file(&repo, Path::new("test.txt")).unwrap();
+
+        let index = repo.index().unwrap();
+        assert!(index.get_path(Path::new("test.txt"), 0).is_none());
+    }
+
+    #[test]
+    fn path_change_status_tells_staged_from_unstaged() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let repo = Repository::init(temp_dir.path()).expect("failed to init repo");
+        create_initial_commit(&repo, "test.txt", "hello\n");
+        let status = |path: &str| path_change_status(&repo, Path::new(path)).unwrap();
+
+        assert_eq!(
+            (status("test.txt").staged, status("test.txt").unstaged),
+            (false, false)
+        );
+
+        fs::write(temp_dir.path().join("test.txt"), "changed\n").unwrap();
+        assert_eq!(
+            (status("test.txt").staged, status("test.txt").unstaged),
+            (false, true)
+        );
+
+        stage_file(&repo, Path::new("test.txt")).unwrap();
+        assert_eq!(
+            (status("test.txt").staged, status("test.txt").unstaged),
+            (true, false)
+        );
+
+        fs::write(temp_dir.path().join("test.txt"), "again\n").unwrap();
+        assert_eq!(
+            (status("test.txt").staged, status("test.txt").unstaged),
+            (true, true)
+        );
+
+        fs::write(temp_dir.path().join("new.txt"), "new\n").unwrap();
+        assert_eq!(
+            (status("new.txt").staged, status("new.txt").unstaged),
+            (false, true)
+        );
+        assert_eq!(
+            (status("gone.txt").staged, status("gone.txt").unstaged),
+            (false, false)
+        );
     }
 }

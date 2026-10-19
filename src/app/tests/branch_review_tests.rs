@@ -4,7 +4,9 @@
 
 use crate::app::*;
 use crate::model::FileStatus;
-use crate::vcs::traits::{ResolvedRevisionRange, RevisionDiffTarget, VcsChangeStatus, VcsType};
+use crate::vcs::traits::{
+    ChangeKind, ResolvedRevisionRange, RevisionDiffTarget, VcsChangeStatus, VcsType,
+};
 use std::sync::{Arc, Mutex};
 
 struct TestReviewsDir {
@@ -38,6 +40,14 @@ struct BranchState {
     /// `committed.py`'s hash in the whole-branch diff, where an uncommitted
     /// edit shows.
     committed_hash: u64,
+    /// Files the combined diff returns; empty means `committed.py` and `wip.py`.
+    diff_paths: Vec<String>,
+    /// Paths whose index differs from HEAD.
+    staged: Vec<PathBuf>,
+    /// Paths whose working tree differs from the index.
+    unstaged: Vec<PathBuf>,
+    /// `stage <path>` / `unstage <path>` for each call, in order.
+    staging_calls: Vec<String>,
 }
 
 struct BranchVcs {
@@ -90,9 +100,54 @@ impl VcsBackend for BranchVcs {
             .unwrap()
             .combined_diffs
             .push(commit_ids.to_vec());
-        let mut committed = diff_file("committed.py");
-        committed.content_hash = self.state.lock().unwrap().committed_hash;
-        Ok(vec![committed, diff_file("wip.py")])
+        let state = self.state.lock().unwrap();
+        if state.diff_paths.is_empty() {
+            let mut committed = diff_file("committed.py");
+            committed.content_hash = state.committed_hash;
+            return Ok(vec![committed, diff_file("wip.py")]);
+        }
+        Ok(state.diff_paths.iter().map(|p| diff_file(p)).collect())
+    }
+
+    fn list_changed_paths(&self, kind: ChangeKind) -> Result<Vec<PathBuf>> {
+        let state = self.state.lock().unwrap();
+        Ok(match kind {
+            ChangeKind::Staged => state.staged.clone(),
+            ChangeKind::Unstaged => state.unstaged.clone(),
+        })
+    }
+
+    fn path_change_status(&self, path: &Path) -> Result<VcsChangeStatus> {
+        let state = self.state.lock().unwrap();
+        Ok(VcsChangeStatus {
+            staged: state.staged.iter().any(|p| p == path),
+            unstaged: state.unstaged.iter().any(|p| p == path),
+        })
+    }
+
+    /// Staging moves the whole file into the index, as `git add` does.
+    fn stage_file(&self, path: &Path) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .staging_calls
+            .push(format!("stage {}", path.display()));
+        state.unstaged.retain(|p| p != path);
+        if !state.staged.iter().any(|p| p == path) {
+            state.staged.push(path.to_path_buf());
+        }
+        Ok(())
+    }
+
+    fn unstage_file(&self, path: &Path) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .staging_calls
+            .push(format!("unstage {}", path.display()));
+        state.staged.retain(|p| p != path);
+        if !state.unstaged.iter().any(|p| p == path) {
+            state.unstaged.push(path.to_path_buf());
+        }
+        Ok(())
     }
 
     /// A narrowed selection diffs only its commits.
@@ -421,4 +476,165 @@ fn should_tell_narrowed_views_apart_only_in_branch_reviews() {
 
     // then: one view only, as upstream
     assert_eq!(app.review_view_key(), FULL_REVIEW_VIEW);
+}
+
+/// A branch review with git actions on: `committed.py` has no uncommitted
+/// changes left, `wip.py` is unstaged, and `staged.py` is staged.
+fn git_actions_app(state: &Arc<Mutex<BranchState>>) -> App {
+    {
+        let mut state = state.lock().unwrap();
+        state.diff_paths = vec!["committed.py".into(), "staged.py".into(), "wip.py".into()];
+        state.staged = vec![PathBuf::from("staged.py")];
+        state.unstaged = vec![PathBuf::from("wip.py")];
+    }
+    let mut app = open(state, Some("feature")).expect("open branch review");
+    app.git_actions = true;
+    app.refresh_git_file_states();
+    app
+}
+
+fn file_idx(app: &App, path: &str) -> usize {
+    app.diff_files
+        .iter()
+        .position(|file| file.display_path() == Path::new(path))
+        .expect("file in diff")
+}
+
+fn staging_calls(state: &Arc<Mutex<BranchState>>) -> Vec<String> {
+    state.lock().unwrap().staging_calls.clone()
+}
+
+#[test]
+fn should_report_each_files_git_state_with_git_actions() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let app = git_actions_app(&state);
+
+    let state_of = |path: &str| app.git_file_state(Path::new(path)).unwrap();
+    assert!(state_of("committed.py").committed());
+    assert!(state_of("staged.py").staged && !state_of("staged.py").unstaged);
+    assert!(state_of("wip.py").unstaged && !state_of("wip.py").staged);
+}
+
+#[test]
+fn should_report_no_git_state_without_git_actions() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.git_actions = false;
+
+    assert_eq!(app.git_file_state(Path::new("wip.py")), None);
+    app.toggle_staged_for_file_idx(file_idx(&app, "wip.py"));
+
+    assert!(staging_calls(&state).is_empty());
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("git_actions")
+    );
+}
+
+#[test]
+fn should_stage_an_unstaged_file_and_unstage_a_staged_one() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+
+    app.toggle_staged_for_file_idx(file_idx(&app, "wip.py"));
+    app.toggle_staged_for_file_idx(file_idx(&app, "staged.py"));
+
+    assert_eq!(staging_calls(&state), ["stage wip.py", "unstage staged.py"]);
+    assert!(app.git_file_state(Path::new("wip.py")).unwrap().staged);
+    assert!(app.git_file_state(Path::new("staged.py")).unwrap().unstaged);
+    assert!(
+        app.message
+            .as_ref()
+            .unwrap()
+            .content
+            .contains("Unstaged staged.py")
+    );
+}
+
+#[test]
+fn should_leave_a_file_without_uncommitted_changes_alone() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+
+    app.toggle_staged_for_file_idx(file_idx(&app, "committed.py"));
+
+    assert!(staging_calls(&state).is_empty());
+}
+
+#[test]
+fn should_stage_a_directory_then_unstage_it() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    {
+        let mut state = state.lock().unwrap();
+        state.diff_paths = vec!["src/a.py".into(), "src/b.py".into(), "src/done.py".into()];
+        state.staged = vec![PathBuf::from("src/b.py")];
+        state.unstaged = vec![PathBuf::from("src/a.py")];
+    }
+    let mut app = open(&state, Some("feature")).expect("open branch review");
+    app.git_actions = true;
+    app.refresh_git_file_states();
+
+    // Something under src/ is unstaged, so the directory gets staged.
+    app.toggle_staged_for_directory("src");
+    assert_eq!(staging_calls(&state), ["stage src/a.py"]);
+
+    // Now all of it is staged, so the directory gets unstaged.
+    app.toggle_staged_for_directory("src");
+    assert_eq!(
+        staging_calls(&state),
+        ["stage src/a.py", "unstage src/a.py", "unstage src/b.py"]
+    );
+}
+
+#[test]
+fn should_show_only_files_with_uncommitted_changes() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+
+    app.toggle_only_uncommitted();
+
+    let shown: Vec<_> = app
+        .filtered_file_indices()
+        .into_iter()
+        .map(|idx| app.diff_files[idx].display_path().display().to_string())
+        .collect();
+    assert_eq!(shown, ["staged.py", "wip.py"]);
+
+    app.toggle_only_uncommitted();
+    assert_eq!(app.filtered_file_indices().len(), 3);
+}
+
+fn staging_rows(app: &App) -> Vec<String> {
+    app.review_commits
+        .iter()
+        .filter(|c| App::is_special_commit(c))
+        .map(|c| c.summary.clone())
+        .collect()
+}
+
+#[test]
+fn should_update_only_the_staging_rows_after_staging() {
+    let _reviews = TestReviewsDir::new();
+    let state = state_with(&["c1"]);
+    let mut app = git_actions_app(&state);
+    app.toggle_staged_for_file_idx(file_idx(&app, "wip.py"));
+    let resolved_before = state.lock().unwrap().resolved.len();
+
+    // wip.py was the only unstaged file: its row goes, the staged one stays.
+    assert_eq!(staging_rows(&app), ["Staged changes"]);
+
+    app.toggle_staged_for_file_idx(file_idx(&app, "wip.py"));
+    assert_eq!(staging_rows(&app), ["Staged changes", "Unstaged changes"]);
+    assert_eq!(commit_rows(&app), ["c1"]);
+    // Commits were not re-read.
+    assert_eq!(state.lock().unwrap().resolved.len(), resolved_before);
 }

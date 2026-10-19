@@ -760,6 +760,14 @@ mod tests {
     }
 
     #[test]
+    fn should_map_s_to_toggle_staged() {
+        assert_eq!(
+            map_normal_mode(key(KeyCode::Char('s')), DEFAULT_LEADER_KEY),
+            Action::ToggleStaged
+        );
+    }
+
+    #[test]
     fn should_delegate_unclaimed_keys_to_normal_mode_in_file_tree_mode() {
         for code in [
             KeyCode::Char('j'),

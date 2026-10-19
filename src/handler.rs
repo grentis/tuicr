@@ -2025,6 +2025,14 @@ mod command_tests {
     }
 
     #[test]
+    fn parses_uncommitted_command() {
+        assert_eq!(
+            command_spec_for("uncommitted").map(|spec| spec.kind),
+            Some(CommandKind::ToggleOnlyUncommitted)
+        );
+    }
+
+    #[test]
     fn parses_expand_command() {
         assert_eq!(
             command_spec_for("expand").map(|spec| spec.kind),
