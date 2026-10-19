@@ -331,6 +331,7 @@ mod tests {
         diff_base_sha: Option<String>,
         /// When set, the diff fails with this error.
         diff_error: Option<&'static str>,
+        local_checkout: Option<PathBuf>,
     }
 
     impl StaticBackend {
@@ -341,6 +342,7 @@ mod tests {
                 calls: Mutex::new(Vec::new()),
                 diff_base_sha: None,
                 diff_error: None,
+                local_checkout: None,
             }
         }
 
@@ -353,9 +355,22 @@ mod tests {
             self.diff_error = Some(error);
             self
         }
+
+        fn with_local_checkout(mut self, root: &Path) -> Self {
+            self.local_checkout = Some(root.to_path_buf());
+            self
+        }
     }
 
     impl ForgeBackend for StaticBackend {
+        fn is_diff_too_large(&self, error: &TuicrError) -> bool {
+            error.to_string().contains("too_large")
+        }
+
+        fn local_checkout_path(&self) -> Option<PathBuf> {
+            self.local_checkout.clone()
+        }
+
         fn resolve_diff_base_sha(&self, _pr: &PullRequestDetails) -> Option<String> {
             self.calls.lock().unwrap().push("resolve_diff_base_sha");
             self.diff_base_sha.clone()
@@ -930,6 +945,141 @@ rename to new_name.rs
         assert_eq!(
             opened.session.pr_session_key.as_ref().map(|k| k.number),
             Some(125)
+        );
+    }
+
+    fn git(root: &Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?} failed");
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    }
+
+    /// A checkout where `main` adds `a.txt` and the PR branch then adds
+    /// `b.txt`; returns the base and head SHAs.
+    fn pr_checkout(root: &Path) -> (String, String) {
+        git(root, &["init", "--quiet"]);
+        git(root, &["config", "user.email", "test@example.com"]);
+        git(root, &["config", "user.name", "Test"]);
+        git(root, &["config", "commit.gpgsign", "false"]);
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        git(root, &["add", "."]);
+        git(root, &["commit", "--quiet", "-m", "base"]);
+        let base = git(root, &["rev-parse", "HEAD"]);
+        std::fs::write(root.join("b.txt"), "b\n").unwrap();
+        git(root, &["add", "."]);
+        git(root, &["commit", "--quiet", "-m", "head"]);
+        (base, git(root, &["rev-parse", "HEAD"]))
+    }
+
+    fn too_large_pr(root: &Path, base: String, head: String) -> StaticBackend {
+        let mut pr = details();
+        pr.base_sha = base;
+        pr.head_sha = head;
+        StaticBackend::new(pr, SIMPLE_PATCH)
+            .with_diff_error("PullRequest.diff too_large")
+            .with_local_checkout(root)
+    }
+
+    #[test]
+    fn should_diff_a_too_large_pr_from_the_local_checkout_with_local_diff_fallback() {
+        // given a forge refusing the diff, and a checkout with both commits
+        let dir = tempfile::tempdir().unwrap();
+        let (base, head) = pr_checkout(dir.path());
+        let backend = too_large_pr(dir.path(), base, head);
+        let target = PullRequestTarget::with_repository(repo(), 125, "125");
+        let highlighter = SyntaxHighlighter::default();
+        // when
+        let opened = open_pull_request(&backend, target, None, &highlighter, true).unwrap();
+        // then the diff is the PR's, built locally
+        assert!(opened.diff_error.is_none());
+        let paths: Vec<_> = opened
+            .diff_files
+            .iter()
+            .map(|file| file.display_path().to_path_buf())
+            .collect();
+        assert_eq!(paths, vec![PathBuf::from("b.txt")]);
+    }
+
+    #[test]
+    fn should_keep_the_forge_error_without_local_diff_fallback() {
+        // given the same PR and checkout
+        let dir = tempfile::tempdir().unwrap();
+        let (base, head) = pr_checkout(dir.path());
+        let backend = too_large_pr(dir.path(), base, head);
+        let target = PullRequestTarget::with_repository(repo(), 125, "125");
+        let highlighter = SyntaxHighlighter::default();
+        // when the setting is off
+        let opened = open_pull_request(&backend, target, None, &highlighter, false).unwrap();
+        // then the PR opens without its diff, as before
+        assert!(opened.diff_files.is_empty());
+        assert!(
+            opened
+                .diff_error
+                .as_deref()
+                .is_some_and(|error| error.contains("too_large"))
+        );
+    }
+
+    #[test]
+    fn should_say_what_to_fetch_when_the_checkout_lacks_the_pr_commits() {
+        // given a checkout without the PR's commits
+        let dir = tempfile::tempdir().unwrap();
+        pr_checkout(dir.path());
+        let backend = too_large_pr(dir.path(), "1".repeat(40), "2".repeat(40));
+        let target = PullRequestTarget::with_repository(repo(), 125, "125");
+        let highlighter = SyntaxHighlighter::default();
+        // when
+        let opened = open_pull_request(&backend, target, None, &highlighter, true).unwrap();
+        // then the PR opens without its diff, saying what to fetch
+        assert!(opened.diff_files.is_empty());
+        let error = opened.diff_error.unwrap();
+        assert!(error.contains("too_large"), "{error}");
+        assert!(error.contains("fetch main and the PR's head"), "{error}");
+    }
+
+    #[test]
+    fn should_say_to_run_from_a_checkout_when_there_is_none() {
+        // given a forge refusing the diff, opened outside any checkout
+        let backend = StaticBackend::new(details(), SIMPLE_PATCH)
+            .with_diff_error("PullRequest.diff too_large");
+        let target = PullRequestTarget::with_repository(repo(), 125, "125");
+        let highlighter = SyntaxHighlighter::default();
+        // when
+        let opened = open_pull_request(&backend, target, None, &highlighter, true).unwrap();
+        // then
+        let error = opened.diff_error.unwrap();
+        assert!(
+            error.contains("run tuicr from a checkout of agavra/tuicr"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn should_not_fall_back_to_the_local_checkout_on_other_diff_errors() {
+        // given a diff failing for another reason
+        let dir = tempfile::tempdir().unwrap();
+        let (base, head) = pr_checkout(dir.path());
+        let mut pr = details();
+        pr.base_sha = base;
+        pr.head_sha = head;
+        let backend = StaticBackend::new(pr, SIMPLE_PATCH)
+            .with_diff_error("HTTP 401: Bad credentials")
+            .with_local_checkout(dir.path());
+        let target = PullRequestTarget::with_repository(repo(), 125, "125");
+        let highlighter = SyntaxHighlighter::default();
+        // when
+        let opened = open_pull_request(&backend, target, None, &highlighter, true).unwrap();
+        // then the error stays
+        assert!(opened.diff_files.is_empty());
+        assert!(
+            opened
+                .diff_error
+                .as_deref()
+                .is_some_and(|error| error.contains("Bad credentials"))
         );
     }
 }

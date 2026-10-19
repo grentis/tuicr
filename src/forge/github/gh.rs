@@ -2227,6 +2227,19 @@ Match host github-work
     }
 
     #[test]
+    fn should_recognise_github_refusing_a_diff_over_300_files() {
+        let backend = GitHubGhBackend::with_runner(Some(repo()), FakeGhRunner::default());
+        let refused = TuicrError::Forge(
+            "could not find pull request diff: HTTP 406: Sorry, the diff exceeded the \
+             maximum number of files (300). (PullRequest.diff too_large)"
+                .into(),
+        );
+        assert!(backend.is_diff_too_large(&refused));
+        let other = TuicrError::Forge("HTTP 401: Bad credentials".into());
+        assert!(!backend.is_diff_too_large(&other));
+    }
+
+    #[test]
     fn get_pull_request_diff_pairs_metadata_with_patch_text() {
         let runner = FakeGhRunner::default();
         let backend = GitHubGhBackend::with_runner(Some(repo()), runner);

@@ -2344,6 +2344,22 @@ comment_type_prefix = false
     }
 
     #[test]
+    fn should_parse_local_diff_fallback_from_the_forge_section() {
+        let outcome = parse_config("[forge]\nlocal_diff_fallback = true\n");
+        let forge = outcome
+            .config
+            .and_then(|cfg| cfg.forge)
+            .expect("forge section should parse");
+        assert!(forge.local_diff_fallback);
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn should_keep_local_diff_fallback_off_by_default() {
+        assert!(!ForgeConfig::default().local_diff_fallback);
+    }
+
+    #[test]
     fn should_parse_sync_viewed_from_the_forge_section() {
         // `[forge]` is read key by key: a new field must be listed here too.
         let outcome = parse_config(
