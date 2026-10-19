@@ -653,6 +653,11 @@ pub trait ForgeBackend {
     fn resolve_diff_base_sha(&self, _pr: &PullRequestDetails) -> Option<String> {
         None
     }
+    /// Whether `error` from `get_pull_request_diff` is the forge refusing a
+    /// diff as too large.
+    fn is_diff_too_large(&self, _error: &TuicrError) -> bool {
+        false
+    }
     /// Optional path to a local checkout the backend may consult as an
     /// optimization. The default returns `None`; callers must never treat
     /// this path as the source of truth for PR contents.

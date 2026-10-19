@@ -281,6 +281,7 @@ relative_line_numbers = false # show rendered-row distances in the diff gutter
 
 [forge]
 sync_viewed = false           # sync `r` with GitHub's per-file Viewed checkbox
+local_diff_fallback = false   # diff a PR too large for the forge from the local checkout
 
 [[comment_types]]
 id = "issue"

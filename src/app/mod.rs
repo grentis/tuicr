@@ -1993,6 +1993,8 @@ pub struct AppStartupOptions<'a> {
     pub show_pr_comments: bool,
     /// Configured `pr_comments_visibility` default for fresh PR sessions.
     pub pr_comments_visibility: Option<crate::forge::remote_comments::PrCommentsVisibility>,
+    /// `[forge] local_diff_fallback`, needed before `forge_config` is set.
+    pub local_diff_fallback: bool,
     pub git_backend_preference: GitBackendPreference,
     pub diff_whitespace_mode: DiffWhitespaceMode,
     /// Which commits are selected when a multi-commit review first opens.

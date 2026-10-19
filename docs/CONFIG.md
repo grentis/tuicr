@@ -79,6 +79,7 @@ custom = true                 # ignore whitespace in *.custom files
 comment_type_prefix = true
 sync_viewed = false
 extended_comments = false
+local_diff_fallback = false
 
 [export]
 intro = "I reviewed your code and have the following comments. Please address them."
@@ -293,6 +294,7 @@ comment_type_prefix = false
 | `comment_type_prefix` | `true`  | Prepend `[TYPE] ` to comment bodies on submit (e.g. `[ISSUE] Magic number should be a constant`). The tag uses the type's `label`, uppercased — the same text the TUI badge and export show. Set to `false` to send the raw comment body without a classification tag. |
 | `sync_viewed`         | `false` | Keep `r` (toggle file reviewed) and GitHub's per-file **Viewed** checkbox in step while reviewing a pull request, in both directions. GitHub only; see [Viewed state](#viewed-state). |
 | `extended_comments`   | `false` | Extra comment features: typing `@` in a comment suggests people to mention (see [Mentioning people](KEYBINDINGS.md#mentioning-people)), and `<leader>C` posts a comment to the PR conversation. Local reviews get threads: `c` on a local comment replies to it (each reply in its own box, labelled with whom it answers; see `comment_style` to draw a thread as one box). `dd` on a thread's first comment deletes its replies too and saves at once, `y` leaves out threads someone else answered last, and an unset `username` falls back to git's `user.name`. |
+| `local_diff_fallback` | `false` | When the forge refuses a pull request's diff as too large (GitHub, over 300 files), build it from the local checkout instead: the merge-base of base and head against head, as the forge does. Needs tuicr run from a checkout of the repository that has both commits; otherwise the PR opens without its diff and the status bar says what to fetch. |
 
 When enabled (the default), submitted comments look like:
 
