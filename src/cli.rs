@@ -323,6 +323,20 @@ pub enum ReviewCommand {
         #[arg(long, value_name = "PATH|OWNER/REPO", default_value = ".")]
         repo: PathBuf,
     },
+    /// Tell the tuicr that has a local review open that the agent finished
+    /// what it read with `--needs-reply`; tuicr shows it in its status bar.
+    Done {
+        /// Session slug from `tuicr review list`, or path to a session JSON
+        /// file. Local sessions only.
+        #[arg(long, value_name = "SESSION")]
+        session: String,
+        /// Repo selector used to resolve a local session slug.
+        #[arg(long, value_name = "PATH|OWNER/REPO", default_value = ".")]
+        repo: PathBuf,
+        /// A short summary for the status bar, such as "3 threads answered".
+        #[arg(long, value_name = "TEXT")]
+        message: Option<String>,
+    },
     /// Print comments stored in a persisted session.
     #[command(alias = "get")]
     Comments {

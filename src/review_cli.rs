@@ -99,6 +99,11 @@ fn run_with_writer(command: ReviewCommand, out: &mut impl Write) -> Result<()> {
             agent,
         } => attach_agent(&session, &repo, &agent, out),
         ReviewCommand::Wait { session, repo } => wait_for_submit(&session, &repo, out),
+        ReviewCommand::Done {
+            session,
+            repo,
+            message,
+        } => report_done(&session, &repo, message.as_deref(), out),
     }
 }
 
@@ -241,6 +246,34 @@ fn wait_for_submit(session: &str, repo: &Path, out: &mut impl Write) -> Result<(
         first = false;
         std::thread::sleep(WAIT_POLL);
     }
+}
+
+/// `tuicr review done`: the agent finished every `:submit` it has read.
+fn report_done(
+    session: &str,
+    repo: &Path,
+    message: Option<&str>,
+    out: &mut impl Write,
+) -> Result<()> {
+    let store = ReviewStore::new();
+    let session_ref = resolve_session_ref(&store, repo, session)?;
+    if store.get_review(&session_ref)?.pr_session_key.is_some() {
+        return Err(TuicrError::InvalidInput(format!(
+            "'{session}' is a PR session; agents report on local reviews only"
+        )));
+    }
+    let message = message.map(str::trim).filter(|m| !m.is_empty());
+    if !store.mark_agent_done(&session_ref, message)? {
+        return Err(TuicrError::InvalidInput(format!(
+            "no running tuicr has '{session}' open"
+        )));
+    }
+    serde_json::to_writer_pretty(
+        &mut *out,
+        &serde_json::json!({ "session": session, "message": message }),
+    )?;
+    writeln!(out)?;
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -600,6 +633,10 @@ fn show_comments(
 ) -> Result<()> {
     let store = ReviewStore::new();
     let session_ref = resolve_session_ref(&store, repo, session)?;
+    // The agent reading: stamped first, so a `:submit` after it stays open.
+    if needs_reply.is_some() {
+        store.mark_agent_read(&session_ref)?;
+    }
     let session = store.get_review(&session_ref)?;
     let mut comments = collect_comments(&session);
     if let Some(agent) = needs_reply {

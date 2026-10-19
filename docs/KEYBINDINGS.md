@@ -320,7 +320,7 @@ In command mode,
 | `:commits` (`:targets`) | Select commits to review |
 | `:prs` | Open the review target selector on Pull Requests |
 | `:sessions` (`:reviews`) | Resume a saved review for this checkout |
-| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft, plus Replies only with `[forge] extended_comments`). In a local review: tell the agent waiting on it (`tuicr review wait`), else run `[agent] send_command` for the attached agent. See [Agents](REVIEW_CLI.md#agents) |
+| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft, plus Replies only with `[forge] extended_comments`). In a local review: tell the agent waiting on it (`tuicr review wait`), and show its `tuicr review done` when it comes; else run `[agent] send_command` for the attached agent. See [Agents](REVIEW_CLI.md#agents) |
 | `:submit comment` | Submit a Comment review |
 | `:submit approve` | Submit an Approve review |
 | `:submit request-changes` | Submit a Request-changes review |

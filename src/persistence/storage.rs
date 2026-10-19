@@ -318,14 +318,13 @@ pub(crate) fn mark_session_active_in_dir(
         let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
         active.prune_stale();
         let pid = std::process::id();
-        // Re-registering on save keeps the attached agent and waiter.
+        // Re-registering on save keeps what the agent and its waiter left.
         let previous = active
             .sessions
             .iter()
-            .find(|entry| entry.pid == pid && entry.path == path);
-        let agent = previous.and_then(|entry| entry.agent.clone());
-        let waiter_pid = previous.and_then(|entry| entry.waiter_pid);
-        let submitted_at = previous.and_then(|entry| entry.submitted_at);
+            .find(|entry| entry.pid == pid && entry.path == path)
+            .cloned()
+            .unwrap_or_default();
         active
             .sessions
             .retain(|entry| entry.pid != pid && entry.path != path);
@@ -334,9 +333,7 @@ pub(crate) fn mark_session_active_in_dir(
             slug,
             path,
             last_seen_at: Utc::now(),
-            agent,
-            waiter_pid,
-            submitted_at,
+            ..previous
         });
         save_active_sessions_unlocked(reviews_dir, &active)
     })
@@ -429,6 +426,79 @@ pub(crate) fn notify_waiter_for_pid_in_dir(reviews_dir: &Path, pid: u32) -> Resu
         }
         Ok(notified)
     })
+}
+
+/// Stamp the agent's read of the session at `path` on every running tuicr
+/// that has it open.
+pub(crate) fn mark_agent_read_in_dir(reviews_dir: &Path, path: &Path) -> Result<()> {
+    update_open_entries(reviews_dir, path, |entry| {
+        entry.agent_read_at = Some(Utc::now());
+    })
+    .map(|_| ())
+}
+
+/// `tuicr review done`: the agent finished what it has read so far. Returns
+/// false when no running tuicr has the session open.
+pub(crate) fn mark_agent_done_in_dir(
+    reviews_dir: &Path,
+    path: &Path,
+    message: Option<&str>,
+) -> Result<bool> {
+    update_open_entries(reviews_dir, path, |entry| {
+        entry.agent_done = Some(AgentDone {
+            at: Utc::now(),
+            covers: entry.agent_read_at,
+            message: message.map(str::to_string),
+        });
+    })
+}
+
+fn update_open_entries(
+    reviews_dir: &Path,
+    path: &Path,
+    mut update: impl FnMut(&mut ActiveSessionEntry),
+) -> Result<bool> {
+    maybe_migrate(reviews_dir)?;
+    let path = normalize_active_path(path);
+    with_reviews_dir_lock(reviews_dir, || {
+        let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+        active.prune_stale();
+        let mut open = false;
+        for entry in active
+            .sessions
+            .iter_mut()
+            .filter(|entry| normalize_active_path(&entry.path) == path)
+        {
+            update(entry);
+            open = true;
+        }
+        if open {
+            save_active_sessions_unlocked(reviews_dir, &active)?;
+        }
+        Ok(open)
+    })
+}
+
+/// The agent's progress on the session this process has open.
+pub(crate) fn agent_progress_for_pid() -> Result<Option<AgentProgress>> {
+    let reviews_dir = get_reviews_dir()?;
+    agent_progress_for_pid_in_dir(&reviews_dir, std::process::id())
+}
+
+pub(crate) fn agent_progress_for_pid_in_dir(
+    reviews_dir: &Path,
+    pid: u32,
+) -> Result<Option<AgentProgress>> {
+    let active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
+    Ok(active
+        .sessions
+        .into_iter()
+        .find(|entry| entry.pid == pid)
+        .map(|entry| AgentProgress {
+            submitted_at: entry.submitted_at,
+            waiting: entry.live_waiter().is_some(),
+            done: entry.agent_done,
+        }))
 }
 
 /// What `tuicr review wait` sees of the session at `path` on each look.
@@ -561,7 +631,7 @@ impl ActiveSessionsFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct ActiveSessionEntry {
     pid: u32,
     slug: String,
@@ -577,6 +647,31 @@ struct ActiveSessionEntry {
     /// When `:submit` last notified the waiter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     submitted_at: Option<chrono::DateTime<Utc>>,
+    /// When the agent last read what waits on it (`--needs-reply`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_read_at: Option<chrono::DateTime<Utc>>,
+    /// The agent's last `tuicr review done`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_done: Option<AgentDone>,
+}
+
+/// A `tuicr review done`: when, what it says, and up to which read it covers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AgentDone {
+    pub at: chrono::DateTime<Utc>,
+    /// `agent_read_at` when it was sent: every `:submit` before that is done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covers: Option<chrono::DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// What a tuicr watching its agent sees on its own entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AgentProgress {
+    pub submitted_at: Option<chrono::DateTime<Utc>>,
+    pub done: Option<AgentDone>,
+    pub waiting: bool,
 }
 
 impl ActiveSessionEntry {
