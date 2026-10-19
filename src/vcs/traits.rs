@@ -372,6 +372,14 @@ pub trait VcsBackend: Send {
             "Unstaging not supported for this VCS".into(),
         ))
     }
+
+    /// Discard every uncommitted change to a file: restore HEAD's version, or delete it if HEAD
+    /// lacks it.
+    fn discard_file(&self, _path: &Path) -> Result<()> {
+        Err(crate::error::TuicrError::UnsupportedOperation(
+            "Discarding changes not supported for this VCS".into(),
+        ))
+    }
 }
 
 #[cfg(test)]

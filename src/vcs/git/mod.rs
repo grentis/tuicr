@@ -425,6 +425,13 @@ impl VcsBackend for GitBackend {
             Self::Cli(backend) => backend.path_change_status(path),
         }
     }
+
+    fn discard_file(&self, path: &Path) -> Result<()> {
+        match self {
+            Self::Libgit2(backend) => backend.discard_file(path),
+            Self::Cli(backend) => backend.discard_file(path),
+        }
+    }
 }
 
 #[cfg(test)]

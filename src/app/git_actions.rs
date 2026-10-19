@@ -2,8 +2,9 @@
 //!
 //! A branch review diffs base to working tree, so it already shows the branch's next commits. These
 //! actions work on the uncommitted part: `s` stages or unstages a file or directory, the tree marks
-//! each file's state, and `:uncommitted` narrows the tree to files with something to commit.
-//! Staging never changes the diff, which ends at the working tree, so reviewed marks are unaffected.
+//! each file's state, `:uncommitted` narrows the tree to files with something to commit, and `d`
+//! discards a file's or directory's uncommitted changes. Staging never changes the diff, which ends
+//! at the working tree, so reviewed marks are unaffected.
 
 use super::*;
 use crate::vcs::traits::ChangeKind;
@@ -15,6 +16,17 @@ pub struct GitFileState {
     pub staged: bool,
     /// The working tree differs from the index (untracked files included).
     pub unstaged: bool,
+}
+
+/// Changes `d` will discard once confirmed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscardRequest {
+    /// The file or directory the dialog names.
+    pub target: String,
+    /// Files with uncommitted changes, as the tree shows them.
+    pub files: usize,
+    /// Every path to restore or delete, including a rename's old side.
+    pub paths: Vec<PathBuf>,
 }
 
 impl GitFileState {
@@ -158,6 +170,114 @@ impl App {
         let verb = if stage { "Staged" } else { "Unstaged" };
         self.set_message(format!("{verb} {} file(s) in {dir}", changed.len()));
         self.after_staging_change(&changed);
+    }
+
+    /// `d` on a file: ask to discard its uncommitted changes, if it has any.
+    pub fn request_discard_for_file_idx(&mut self, file_idx: usize) {
+        if !self.require_git_actions() {
+            return;
+        }
+        let Some(file) = self.diff_files.get(file_idx) else {
+            return;
+        };
+        let path = file.display_path().clone();
+        if self
+            .git_file_states
+            .get(&path)
+            .is_none_or(|state| state.committed())
+        {
+            self.set_message(format!("{} has no uncommitted changes", path.display()));
+            return;
+        }
+        let paths = self.discard_paths(std::slice::from_ref(&file_idx));
+        self.ask_to_discard(DiscardRequest {
+            target: path.display().to_string(),
+            files: 1,
+            paths,
+        });
+    }
+
+    /// `d` on a directory: ask to discard the uncommitted changes of every file under it.
+    pub fn request_discard_for_directory(&mut self, dir: &str) {
+        if !self.require_git_actions() {
+            return;
+        }
+        let dir_path = Path::new(dir);
+        let file_idxs: Vec<usize> = self
+            .diff_files
+            .iter()
+            .enumerate()
+            .filter(|(_, file)| self.file_matches_patterns(file))
+            .filter(|(_, file)| file.display_path().starts_with(dir_path))
+            .filter(|(_, file)| {
+                self.git_file_states
+                    .get(file.display_path())
+                    .is_some_and(|state| !state.committed())
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+        if file_idxs.is_empty() {
+            self.set_message(format!("Nothing uncommitted in {dir}"));
+            return;
+        }
+        let paths = self.discard_paths(&file_idxs);
+        self.ask_to_discard(DiscardRequest {
+            target: format!("{}/", dir.trim_end_matches('/')),
+            files: file_idxs.len(),
+            paths,
+        });
+    }
+
+    /// Paths to discard: each file's own, plus an uncommitted rename's old side, which must come
+    /// back.
+    fn discard_paths(&self, file_idxs: &[usize]) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        for file in file_idxs.iter().filter_map(|idx| self.diff_files.get(*idx)) {
+            let path = file.display_path().clone();
+            if let Some(old) = file.old_path.as_ref().filter(|old| **old != path)
+                && self
+                    .vcs
+                    .path_change_status(old)
+                    .is_ok_and(|status| status.staged || status.unstaged)
+            {
+                paths.push(old.clone());
+            }
+            paths.push(path);
+        }
+        paths
+    }
+
+    fn ask_to_discard(&mut self, request: DiscardRequest) {
+        self.pending_discard = Some(request);
+        self.enter_confirm_mode(ConfirmAction::DiscardChanges);
+    }
+
+    /// `y` on the confirmation: discard, then reload, since the branch diff ends at the working
+    /// tree.
+    pub fn confirm_discard(&mut self) {
+        let Some(request) = self.pending_discard.take() else {
+            return;
+        };
+        let mut failure = None;
+        for path in &request.paths {
+            if let Err(e) = self.vcs.discard_file(path) {
+                failure = Some(format!("Failed to discard {}: {e}", path.display()));
+                break;
+            }
+        }
+        let reloaded = self.reload_diff_files();
+        match (failure, reloaded) {
+            (Some(error), _) => self.set_error(error),
+            (None, Err(e)) => self.set_error(format!("Discarded, but the reload failed: {e}")),
+            (None, Ok(_)) => {
+                let what = match request.files {
+                    1 if !request.target.ends_with('/') => request.target,
+                    1 => format!("1 file in {}", request.target),
+                    n => format!("{n} files in {}", request.target),
+                };
+                self.set_message(format!("Discarded the changes to {what}"));
+            }
+        }
     }
 
     /// Update only what staging `paths` changed: their states, probed per path, and the commit

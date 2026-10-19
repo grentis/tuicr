@@ -1,7 +1,7 @@
 use git2::Repository;
 use std::path::Path;
 
-use crate::error::Result;
+use crate::error::{Result, TuicrError};
 use crate::vcs::git::diff::fresh_index;
 use crate::vcs::traits::VcsChangeStatus;
 
@@ -58,6 +58,45 @@ pub fn unstage_file(repo: &Repository, path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Throw away every uncommitted change to `path`. A file in HEAD is restored in the index and
+/// working tree (`git checkout HEAD -- <path>`); one HEAD lacks is unstaged and deleted.
+///
+/// Uses the git CLI so checkout filters and a partial clone's missing blobs work as in git.
+pub fn discard_file(workdir: &Path, path: &Path) -> Result<()> {
+    let git = |args: &[&str]| -> Result<String> {
+        let output = std::process::Command::new("git")
+            .current_dir(workdir)
+            .args(args)
+            .arg("--")
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|e| TuicrError::VcsCommand(format!("Failed to run git: {e}")))?;
+        if !output.status.success() {
+            return Err(TuicrError::VcsCommand(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    };
+    // Trees only, so nothing is fetched just to ask.
+    let in_head = git(&["ls-tree", "--name-only", "HEAD"])
+        .map(|listed| !listed.trim().is_empty())
+        .unwrap_or(false);
+    if in_head {
+        git(&["checkout", "-q", "HEAD"])?;
+        return Ok(());
+    }
+    git(&["rm", "-q", "--cached", "--ignore-unmatch"])?;
+    match std::fs::remove_file(workdir.join(path)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(TuicrError::VcsCommand(format!(
+            "Failed to delete {}: {e}",
+            path.display()
+        ))),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]

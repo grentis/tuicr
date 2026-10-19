@@ -500,6 +500,10 @@ impl VcsBackend for GitCliBackend {
 
         Ok(())
     }
+
+    fn discard_file(&self, path: &Path) -> Result<()> {
+        super::staging::discard_file(&self.root_path, path)
+    }
 }
 
 fn strings<const N: usize>(args: [&str; N]) -> Vec<String> {

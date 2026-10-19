@@ -48,6 +48,8 @@ pub enum Action {
     /// Edit the comment at cursor with the text cursor at end (vim `A`).
     EditCommentAtEnd,
     PendingDCommand,
+    /// `d` in the file tree with git actions on: discard uncommitted changes.
+    DiscardChanges,
     EditFile,
     SearchNext,
     SearchPrev,
