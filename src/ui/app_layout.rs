@@ -100,6 +100,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::SubmitConfirm {
         submit_modals::render_submit_confirm(frame, app);
     }
+    if app.input_mode == InputMode::CommitMessage {
+        crate::ui::commit_dialog::render_commit_dialog(frame, app);
+    }
     if app.input_mode == InputMode::SubmitActionPicker {
         submit_modals::render_submit_action_picker(frame, app);
     }

@@ -342,6 +342,7 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             InputMode::SubmitConfirm => " SUBMIT ".to_string(),
             InputMode::SubmitActionPicker => " SUBMIT ".to_string(),
             InputMode::ThemePicker => " THEME ".to_string(),
+            InputMode::CommitMessage => " COMMIT ".to_string(),
         };
 
         let mode_span = Span::styled(mode_str, styles::mode_style(theme));
@@ -394,6 +395,9 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 InputMode::ThemePicker => Cow::Borrowed(
                     "   j/k move \u{00b7} \u{21b5} apply \u{00b7} / filter \u{00b7} esc cancel",
+                ),
+                InputMode::CommitMessage => Cow::Borrowed(
+                    "   \u{21b5}/ctrl-s commit \u{00b7} tab title/description \u{00b7} esc close",
                 ),
             }
         };

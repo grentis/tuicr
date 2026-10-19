@@ -61,7 +61,7 @@ impl App {
     }
 
     /// Explain why `s` does nothing outside a branch review with the setting.
-    fn require_git_actions(&mut self) -> bool {
+    pub(in crate::app) fn require_git_actions(&mut self) -> bool {
         if self.git_actions_active() {
             return true;
         }

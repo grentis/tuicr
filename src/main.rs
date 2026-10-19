@@ -15,11 +15,12 @@ use tuicr::config::IgnoreWhitespaceConfig;
 use tuicr::editor::{EditorCommand, EditorError, EditorLaunch, EditorSurface, EditorTarget};
 use tuicr::handler::{
     handle_command_action, handle_comment_action, handle_comment_navigator_action,
-    handle_commit_select_action, handle_commit_selector_action, handle_confirm_action,
-    handle_diff_action, handle_file_list_action, handle_help_action, handle_mention_key,
-    handle_mouse_event, handle_search_action, handle_submit_action_picker_action,
-    handle_submit_confirm_action, handle_submit_resolver_action, handle_summary_action,
-    handle_theme_picker_action, handle_visual_action,
+    handle_commit_message_key, handle_commit_message_paste, handle_commit_select_action,
+    handle_commit_selector_action, handle_confirm_action, handle_diff_action,
+    handle_file_list_action, handle_help_action, handle_mention_key, handle_mouse_event,
+    handle_search_action, handle_submit_action_picker_action, handle_submit_confirm_action,
+    handle_submit_resolver_action, handle_summary_action, handle_theme_picker_action,
+    handle_visual_action,
 };
 use tuicr::input::{
     Action, map_file_tree_mode_with_q_quits, map_file_tree_prompt_mode,
@@ -517,6 +518,7 @@ fn main() -> anyhow::Result<()> {
         needs_redraw |= app.poll_viewed_sync_events();
         needs_redraw |= app.poll_mention_events();
         needs_redraw |= app.poll_pr_comment_events();
+        needs_redraw |= app.poll_commit_events();
         needs_redraw |= app.poll_persisted_session_changes();
         needs_redraw |= app.poll_diff_watch_changes();
         needs_redraw |= pr_pending;
@@ -596,6 +598,9 @@ fn main() -> anyhow::Result<()> {
                         if app.input_mode == InputMode::Comment {
                             app.exit_comment_mode();
                         }
+                        if app.input_mode == InputMode::CommitMessage {
+                            app.close_commit_dialog();
+                        }
 
                         if let Some(first_press) = pending_ctrl_c
                             && first_press.elapsed() < CTRL_C_EXIT_TIMEOUT
@@ -614,6 +619,12 @@ fn main() -> anyhow::Result<()> {
                     if pending_ctrl_c.is_some() {
                         pending_ctrl_c = None;
                         app.message = None;
+                    }
+
+                    // The commit pop-up takes every key while it is open.
+                    if app.input_mode == InputMode::CommitMessage {
+                        handle_commit_message_key(&mut app, key);
+                        continue;
                     }
 
                     // Handle pending z command for zz/zt/zb viewport positioning
@@ -749,6 +760,11 @@ fn main() -> anyhow::Result<()> {
                             }
                             crossterm::event::KeyCode::Char('o') => {
                                 app.open_pr_in_browser();
+                                continue;
+                            }
+                            // `<leader>g` opens the commit pop-up, like `:commit`.
+                            crossterm::event::KeyCode::Char('g') => {
+                                app.open_commit_dialog();
                                 continue;
                             }
                             // `<leader>r` hides or shows reviewed files, like `:reviewed`.
@@ -943,6 +959,10 @@ fn main() -> anyhow::Result<()> {
                 Event::Paste(text) => {
                     // Bracketed-paste payload — route to whichever handler is
                     // currently accepting text input. Other modes ignore.
+                    if app.input_mode == InputMode::CommitMessage {
+                        handle_commit_message_paste(&mut app, &text);
+                        continue;
+                    }
                     // Vim comment box: feed the overlay so the buffer stays synced.
                     if app.input_mode == InputMode::Comment && app.comment_vim_enabled {
                         app.ensure_comment_vim_editor();
@@ -1009,6 +1029,7 @@ fn dispatch_action(app: &mut App, action: Action) {
         InputMode::SubmitConfirm => handle_submit_confirm_action(app, action),
         InputMode::SubmitActionPicker => handle_submit_action_picker_action(app, action),
         InputMode::ThemePicker => handle_theme_picker_action(app, action),
+        InputMode::CommitMessage => {}
         InputMode::Normal => match app.focused_panel {
             FocusedPanel::FileList => handle_file_list_action(app, action),
             FocusedPanel::Comments => handle_comment_navigator_action(app, action),

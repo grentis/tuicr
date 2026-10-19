@@ -200,6 +200,8 @@ pub fn map_key_to_action_with_q_quits(
         InputMode::SubmitConfirm => map_submit_confirm_mode(key),
         InputMode::SubmitActionPicker => map_submit_action_picker_mode_with_q_quits(key, q_quits),
         InputMode::ThemePicker => map_theme_picker_mode(key),
+        // Its keys are read directly by `handle_commit_message_key`.
+        InputMode::CommitMessage => Action::None,
     }
 }
 
