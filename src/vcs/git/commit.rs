@@ -44,3 +44,57 @@ pub fn commit_staged(repo_root: &Path, message: &str) -> Result<String> {
     }
     Ok(String::from_utf8_lossy(&head.stdout).trim().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    /// A one-commit repository whose own config disables signing and sets a committer, isolating it
+    /// from the user's global setup.
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        git(root, &["config", "commit.gpgsign", "false"]);
+        git(root, &["config", "user.name", "Test"]);
+        git(root, &["config", "user.email", "test@example.com"]);
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        git(root, &["add", "a.txt"]);
+        git(root, &["commit", "-q", "-m", "base"]);
+        dir
+    }
+
+    #[test]
+    fn should_commit_the_index_with_the_message() {
+        let dir = repo();
+        std::fs::write(dir.path().join("a.txt"), "changed\n").unwrap();
+        git(dir.path(), &["add", "a.txt"]);
+
+        let id = commit_staged(dir.path(), "Title\n\nBody line").unwrap();
+
+        assert_eq!(id, git(dir.path(), &["rev-parse", "HEAD"]));
+        assert_eq!(
+            git(dir.path(), &["log", "-1", "--format=%B"]),
+            "Title\n\nBody line"
+        );
+    }
+
+    #[test]
+    fn should_report_why_git_refused_to_commit() {
+        let dir = repo();
+
+        let error = commit_staged(dir.path(), "Nothing").unwrap_err();
+
+        assert!(error.to_string().contains("nothing"), "{error}");
+    }
+}
