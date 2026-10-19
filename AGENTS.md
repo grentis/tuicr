@@ -130,6 +130,7 @@ src/
 Repository-managed agent integrations:
 
 - `skills/tuicr/` - Shared agent skill bundle for coding agents, for example Claude Code, Codex, and similar tools; launches tuicr in a cmux, tmux, Zellij, or Herdr split pane
+- `skills/tuicr-connect/` - `/tuicr-connect` skill for an agent in a Herdr pane: connects to the `tuicr -b` reviewing its branch (reusing a running one, or opening one in a new tab), waits for `:submit` with `tuicr review wait`, and answers the waiting comments in their threads. Install as `~/.claude/skills/tuicr-connect/`
 
 ### Key Types
 
