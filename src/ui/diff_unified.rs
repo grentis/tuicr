@@ -21,10 +21,9 @@ use crate::ui::diff_view::{
     cursor_indicator_spaced, diff_stat_title, hunk_header_text_and_style,
     paint_cursor_line_highlight, paint_unified_diff_rows_with, paint_visual_selection_overlay,
     populate_row_to_annotation, push_comment_bar, render_expander_line, render_hidden_lines,
-    scroll_comment_input_into_view, skip_comment_box, unified_line_bg_style,
+    scroll_comment_input_into_view, skip_comment_box, unified_line_bg_style, wrap_diff_line,
 };
 use crate::ui::styles;
-use crate::ui::text_utils::wrap_spans_hanging;
 use crate::vcs::git::calculate_gap;
 
 const GUTTER_SPANS: usize = 3;
@@ -40,7 +39,7 @@ fn unified_row_height(
         return 1;
     }
     lines.get(idx).map_or(1, |line| {
-        wrap_spans_hanging(&line.spans, content_start, viewport_width).len()
+        wrap_diff_line(line, content_start, viewport_width).len()
     })
 }
 
@@ -1309,11 +1308,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
             let mut heights = Vec::with_capacity(visible_lines_unscrolled_for_bg.len());
             let mut out: Vec<Line> = Vec::new();
             for (i, line) in visible_lines_unscrolled_for_bg.iter().enumerate() {
-                let rows = wrap_spans_hanging(
-                    &line.spans,
-                    content_start(scroll_offset + i),
-                    viewport_width,
-                );
+                let rows = wrap_diff_line(line, content_start(scroll_offset + i), viewport_width);
                 heights.push(rows.len());
                 out.extend(rows.into_iter().map(Line::from));
             }

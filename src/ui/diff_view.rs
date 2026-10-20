@@ -14,7 +14,7 @@ use crate::ui::comment_panel;
 use crate::ui::diff_side_by_side::render_side_by_side_diff;
 use crate::ui::diff_unified::render_unified_diff;
 use crate::ui::styles;
-use crate::ui::text_utils::col_of_char;
+use crate::ui::text_utils::{col_of_char, wrap_spans, wrap_spans_hanging};
 use unicode_width::UnicodeWidthStr;
 
 /// Static header rule used for file/section headers; avoids `"═".repeat(40)` per frame.
@@ -875,6 +875,33 @@ pub(super) fn comment_box_row(line: &Line) -> Option<CommentBoxRow> {
     } else {
         None
     }
+}
+
+/// Wrap a logical diff line into visual rows. A comment box's content row
+/// wraps behind the box's left border, clear of the right one painted over
+/// the last column; any other line wraps as `wrap_spans_hanging` does.
+pub(super) fn wrap_diff_line<'a>(
+    line: &Line<'a>,
+    content_start: Option<usize>,
+    width: usize,
+) -> Vec<Vec<Span<'a>>> {
+    if let Some(CommentBoxRow::Middle) = comment_box_row(line) {
+        let (gutter, body) = line.spans.split_at(2);
+        let indent: usize = gutter.iter().map(|span| span.content.width()).sum();
+        if indent + 2 < width {
+            let continuation = [
+                Span::raw(" ".repeat(gutter[0].content.width())),
+                gutter[1].clone(),
+            ];
+            let mut rows = wrap_spans(body, width - indent - 2);
+            for (i, row) in rows.iter_mut().enumerate() {
+                let prefix = if i == 0 { gutter } else { &continuation[..] };
+                row.splice(0..0, prefix.iter().cloned());
+            }
+            return rows;
+        }
+    }
+    wrap_spans_hanging(&line.spans, content_start, width)
 }
 
 pub(super) struct DiffOverlayPaint<'a> {
