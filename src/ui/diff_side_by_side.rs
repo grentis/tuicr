@@ -2507,6 +2507,36 @@ mod remote_comments_side_by_side_snapshot_tests {
     }
 
     #[test]
+    fn should_wrap_remote_comment_inside_its_box_in_side_by_side() {
+        // given a remote comment wider than the diff
+        let mut app = make_pr_app();
+        let mut long = thread();
+        long.comments[0].body = "word ".repeat(60);
+        app.forge_review_threads = vec![long];
+        app.set_diff_wrap(true);
+        app.rebuild_annotations();
+        // when
+        let buffer = draw(&mut app);
+        // then
+        assert_wrapped_inside_box(&body_text(&buffer), 60);
+    }
+
+    /// Every row of a wrapped remote comment starts at the same column,
+    /// inside its box, and no word is lost under the right border.
+    fn assert_wrapped_inside_box(body: &str, words: usize) {
+        let cols: Vec<usize> = body
+            .lines()
+            .filter_map(|row| row.find("word").map(|at| row[..at].chars().count()))
+            .collect();
+        assert!(cols.len() >= 2, "expected the comment to wrap:\n{body}");
+        assert!(
+            cols.iter().all(|&col| col == cols[0]),
+            "wrapped rows left the box:\n{body}"
+        );
+        assert_eq!(body.matches("word").count(), words, "{body}");
+    }
+
+    #[test]
     fn should_hide_remote_comments_under_comments_hide_in_side_by_side() {
         // given
         let mut app = make_pr_app();
