@@ -1051,11 +1051,12 @@ fn is_supported_color_value(value: &str) -> bool {
 }
 
 /// Who "you" are when no `username` is configured: git's `user.name`, as
-/// the checkout at `repo` (else the current directory) sees it. Works for any
-/// forge, or none, and offline. `None` when git has no name set.
+/// the checkout at `repo` sees it, else the current directory (also when
+/// `repo` is no folder, as for a PR opened by URL). Works for any forge, or
+/// none, and offline. `None` when git has no name set.
 pub fn git_user_name(repo: Option<&Path>) -> Option<String> {
     let mut command = std::process::Command::new("git");
-    if let Some(repo) = repo {
+    if let Some(repo) = repo.filter(|repo| repo.is_dir()) {
         command.current_dir(repo);
     }
     let output = command
