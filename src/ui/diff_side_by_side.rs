@@ -18,6 +18,7 @@ use crate::ui::diff_view::{
     cursor_indicator_spaced, diff_stat_title, hunk_header_text_and_style,
     paint_cursor_line_highlight, paint_visual_selection_overlay, populate_row_to_annotation,
     render_expander_line, render_hidden_lines, scroll_comment_input_into_view, skip_comment_box,
+    wrap_diff_line,
 };
 use crate::ui::styles;
 use crate::ui::text_utils::{
@@ -63,7 +64,7 @@ fn sbs_row_height(
         }
         None => lines
             .get(idx)
-            .map_or(1, |line| wrap_spans(&line.spans, viewport_width).len()),
+            .map_or(1, |line| wrap_diff_line(line, None, viewport_width).len()),
     }
 }
 
@@ -1131,7 +1132,7 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
                     }
                 }
                 None => {
-                    let rows = wrap_spans(&line.spans, viewport_width);
+                    let rows = wrap_diff_line(line, None, viewport_width);
                     heights.push(rows.len());
                     out.extend(rows.into_iter().map(Line::from));
                 }
