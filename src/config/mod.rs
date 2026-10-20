@@ -2286,6 +2286,13 @@ comment_type_prefix = false
     }
 
     #[test]
+    fn should_read_git_user_name_from_the_current_directory_outside_a_checkout() {
+        let pr_repo = Path::new("forge:github.com/owner/repo");
+
+        assert_eq!(git_user_name(Some(pr_repo)), git_user_name(None));
+    }
+
+    #[test]
     fn should_parse_the_agent_send_command() {
         let outcome = parse_config(
             r#"[agent]
