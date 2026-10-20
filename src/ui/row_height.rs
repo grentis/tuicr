@@ -153,7 +153,7 @@ fn formatted_line_height(mut line: Line<'static>, viewport_width: usize) -> usiz
     // Both renderers prepend a one-cell cursor indicator before passing the
     // logical line through their full-width outer wrap pass.
     line.spans.insert(0, Span::raw(" "));
-    wrap_spans(&line.spans, viewport_width).len()
+    diff_view::wrap_diff_line(&line, None, viewport_width).len()
 }
 
 fn wrap_len(text: &str, width: usize) -> usize {
