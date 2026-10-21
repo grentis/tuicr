@@ -1419,6 +1419,11 @@ pub struct App {
     pub agent_send_command: Option<String>,
     /// The in-flight run of `agent_send_command`.
     pub agent_send_rx: Option<std::sync::mpsc::Receiver<agent::AgentSendResult>>,
+    /// `[agent] notify_command`, run when the agent is done. `None` runs
+    /// nothing.
+    pub agent_notify_command: Option<String>,
+    /// The in-flight run of `agent_notify_command`.
+    pub agent_notify_rx: Option<std::sync::mpsc::Receiver<std::result::Result<(), String>>>,
     /// When to next refresh this process's active-session registration.
     pub next_active_heartbeat_at: std::time::Instant,
     /// Set from a `:submit` until the agent reports done.

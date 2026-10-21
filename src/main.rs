@@ -286,6 +286,10 @@ fn main() -> anyhow::Result<()> {
                     .agent
                     .as_ref()
                     .and_then(|agent| agent.send_command.clone());
+                app.agent_notify_command = cfg
+                    .agent
+                    .as_ref()
+                    .and_then(|agent| agent.notify_command.clone());
                 if let Some(leader) = cfg.leader {
                     app.leader_key = leader;
                 }
@@ -526,6 +530,7 @@ fn main() -> anyhow::Result<()> {
         needs_redraw |= app.poll_commit_events();
         needs_redraw |= app.poll_agent_send_events();
         needs_redraw |= app.poll_agent_done();
+        needs_redraw |= app.poll_agent_notify_events();
         app.poll_active_session_heartbeat();
         needs_redraw |= app.poll_persisted_session_changes();
         needs_redraw |= app.poll_diff_watch_changes();
