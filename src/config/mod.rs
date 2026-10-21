@@ -2319,6 +2319,23 @@ send_command = 'herdr pane run "$TUICR_AGENT" "/tuicr-connect comments $TUICR_SE
     }
 
     #[test]
+    fn should_parse_the_agent_notify_command() {
+        let outcome = parse_config(
+            r#"[agent]
+notify_command = 'notify-send tuicr "$TUICR_AGENT_MESSAGE"'
+"#,
+        );
+
+        let agent = outcome.config.and_then(|cfg| cfg.agent).unwrap();
+        assert_eq!(
+            agent.notify_command.as_deref(),
+            Some(r#"notify-send tuicr "$TUICR_AGENT_MESSAGE""#)
+        );
+        assert_eq!(agent.send_command, None);
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
     fn should_leave_sending_off_for_a_blank_send_command() {
         let outcome = parse_config("[agent]\nsend_command = \"  \"\nwhen = 1\n");
 
