@@ -26,9 +26,9 @@ Run the launcher from the checkout being worked on:
 ~/.claude/skills/tuicr-connect/tuicr-connect.sh /path/to/checkout
 ```
 
-It reuses the tuicr already reviewing the checkout's branch, leaving the
-user where they are, or opens one in a new herdr tab and waits for it to come
-up. It returns at once with JSON:
+It reuses the tuicr already reviewing the checkout's branch, or opens one in
+a new herdr tab of the agent's workspace and waits for it to come up. Either
+way the user stays where they are: the new tab is not focused. It returns at once with JSON:
 
 ```json
 {"session": "owner/repo@branch/branch", "repo": "/path", "branch": "branch", "agent": "w1N:p1", "how": "connected"}

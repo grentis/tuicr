@@ -3,7 +3,7 @@
 #
 # A tuicr already reviewing the checkout's branch (`tuicr -b`) is reused,
 # where it is, without switching to it; otherwise one is started in a new
-# herdr tab and awaited. Either way the agent's pane is attached to its
+# herdr tab of the agent's workspace, left in the background, and awaited. Either way the agent's pane is attached to its
 # session (`tuicr review attach`), so `:submit` in tuicr runs `[agent]
 # send_command` with this pane's id in TUICR_AGENT. Prints the session as
 # JSON and returns at once: nothing here waits on the review.
@@ -28,7 +28,9 @@ die() {
 root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || die "$dir is not a git checkout"
 branch=$(git -C "$root" branch --show-current)
 [[ -n $branch ]] || die "$root has a detached HEAD; a branch review needs a branch"
-agent=$(herdr pane current | jq -er '.result.pane.pane_id') || die "could not find this herdr pane"
+current=$(herdr pane current) || die "could not find this herdr pane"
+agent=$(jq -er '.result.pane.pane_id' <<<"$current") || die "could not find this herdr pane"
+workspace=$(jq -er '.result.pane.workspace_id' <<<"$current") || die "could not find this pane's workspace"
 
 # "<slug> <pid>" for each running tuicr reviewing this checkout's branch.
 # Slugs write a branch's `/` as `-` (tuicr's `sanitize_ref`).
@@ -48,7 +50,7 @@ if ((${#found[@]} == 1)); then
   read -r session _ <<<"${found[0]}"
   how=connected
 else
-  pane=$(herdr tab create --cwd "$root" --label "tuicr $branch" --focus |
+  pane=$(herdr tab create --workspace "$workspace" --cwd "$root" --label "tuicr $branch" --no-focus |
     jq -er '.result.root_pane.pane_id') || die "could not open a herdr tab"
   herdr pane run "$pane" "$launch" >/dev/null
   session=
