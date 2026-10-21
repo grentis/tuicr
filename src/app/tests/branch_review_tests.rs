@@ -1182,3 +1182,74 @@ fn should_count_a_submit_before_the_agents_read_as_done() {
     assert!(check_agent(&mut app));
     assert!(app.agent_watch.is_none());
 }
+
+/// Wait for the notify command's run to finish and be reported.
+fn wait_for_notify(app: &mut App) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while app.agent_notify_rx.is_some() && std::time::Instant::now() < deadline {
+        if app.poll_agent_notify_events() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    false
+}
+
+#[test]
+fn should_run_the_notify_command_once_the_agent_is_done_with_every_submit() {
+    // given: a notify command, a :submit, the agent's read, a second :submit
+    let (_reviews, mut app, path) = app_with_a_waiting_agent();
+    let out = tempfile::tempdir().unwrap();
+    let log = out.path().join("notified.txt");
+    app.agent_notify_command = Some(format!(
+        r#"printf '%s|%s\n' "$TUICR_SESSION" "$TUICR_AGENT_MESSAGE" >> '{}'"#,
+        log.display()
+    ));
+    app.start_submit_action_picker();
+    agent_reads(&path);
+    app.start_submit_action_picker();
+
+    // when: a done that leaves the second :submit pending
+    agent_done(&path, "1 thread answered");
+    assert!(check_agent(&mut app));
+
+    // then: nothing runs
+    assert!(app.agent_notify_rx.is_none());
+
+    // when: a done covering both
+    agent_reads(&path);
+    agent_done(&path, "2 threads answered");
+    assert!(check_agent(&mut app));
+
+    // then: it runs once, with the session and the message, and shows nothing
+    assert!(!wait_for_notify(&mut app));
+    let slug = crate::persistence::storage::slug_for_session(&app.session).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap(),
+        format!("{slug}|2 threads answered\n")
+    );
+    assert_eq!(
+        app.message.as_ref().unwrap().content,
+        "Agent done \u{00b7} 2 threads answered"
+    );
+}
+
+#[test]
+fn should_report_a_failed_notify_command() {
+    // given
+    let (_reviews, mut app, path) = app_with_a_waiting_agent();
+    app.agent_notify_command = Some("echo 'no notification daemon' >&2; exit 1".to_string());
+    app.start_submit_action_picker();
+    agent_reads(&path);
+    agent_done(&path, "done");
+
+    // when
+    assert!(check_agent(&mut app));
+
+    // then
+    assert!(wait_for_notify(&mut app));
+    assert_eq!(
+        app.message.as_ref().unwrap().content,
+        "Notify failed \u{00b7} no notification daemon"
+    );
+}
