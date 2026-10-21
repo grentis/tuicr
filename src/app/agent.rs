@@ -4,7 +4,8 @@
 //! Otherwise `[agent] send_command` runs, with the id from
 //! `tuicr review attach` in `TUICR_AGENT` and the slug in `TUICR_SESSION`;
 //! only the command interprets the id. It runs on a background thread, so a
-//! hung command never freezes the review. PR reviews never send.
+//! hung command never freezes the review. PR reviews never send. When the
+//! agent is done, `[agent] notify_command` runs the same way.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -158,16 +159,61 @@ impl App {
             (Some(read), Some(submitted)) => read >= submitted,
             (None, Some(_)) => false,
         };
-        let mut text = match done.message {
+        let mut text = match &done.message {
             Some(message) => format!("Agent done \u{00b7} {message}"),
             None => "Agent done".to_string(),
         };
         if covered {
             self.agent_watch = None;
+            self.notify_agent_done(done.message.as_deref().unwrap_or_default());
         } else {
             text.push_str(" \u{00b7} still on your last :submit");
         }
         self.set_message(text);
+        true
+    }
+
+    /// Run `[agent] notify_command`, if set, for a done covering every
+    /// `:submit`.
+    fn notify_agent_done(&mut self, message: &str) {
+        let Some(command) = self.agent_notify_command.clone() else {
+            return;
+        };
+        let Ok(slug) = crate::persistence::storage::slug_for_session(&self.session) else {
+            return;
+        };
+        let (slug, message) = (slug.to_string(), message.to_string());
+        let root = self.vcs_info.root_path.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.agent_notify_rx = Some(rx);
+        std::thread::spawn(move || {
+            let env = [
+                ("TUICR_SESSION", &*slug),
+                ("TUICR_AGENT_MESSAGE", &*message),
+            ];
+            let _ = tx.send(run_agent_command("notify_command", &command, &root, &env));
+        });
+    }
+
+    /// Report a failed notify; a success shows nothing. Returns whether a
+    /// repaint is needed.
+    pub fn poll_agent_notify_events(&mut self) -> bool {
+        let Some(rx) = self.agent_notify_rx.as_ref() else {
+            return false;
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.agent_notify_rx = None;
+                return false;
+            }
+        };
+        self.agent_notify_rx = None;
+        let Err(error) = result else {
+            return false;
+        };
+        self.set_error(format!("Notify failed \u{00b7} {error}"));
         true
     }
 
@@ -182,25 +228,39 @@ impl App {
     }
 }
 
-/// Run the send command via the shell from the checkout root, stdin closed.
-/// A failure is explained by its stderr, else its exit status.
+/// Run the send command for `agent`, returning its id on success.
 pub(in crate::app) fn run_send_command(
     command: &str,
     root: &std::path::Path,
     slug: &str,
     agent: &str,
 ) -> AgentSendResult {
-    let output = Command::new("sh")
+    let env = [("TUICR_SESSION", slug), ("TUICR_AGENT", agent)];
+    run_agent_command("send_command", command, root, &env).map(|()| agent.to_string())
+}
+
+/// Run `[agent] <key>` via the shell from the checkout root (when it is a
+/// folder), stdin closed. A failure is explained by its stderr, else its exit
+/// status.
+pub(in crate::app) fn run_agent_command(
+    key: &str,
+    command: &str,
+    root: &std::path::Path,
+    env: &[(&str, &str)],
+) -> std::result::Result<(), String> {
+    let mut shell = Command::new("sh");
+    if root.is_dir() {
+        shell.current_dir(root);
+    }
+    let output = shell
         .arg("-c")
         .arg(command)
-        .current_dir(root)
-        .env("TUICR_SESSION", slug)
-        .env("TUICR_AGENT", agent)
+        .envs(env.iter().copied())
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("could not run send_command: {e}"))?;
+        .map_err(|e| format!("could not run {key}: {e}"))?;
     if output.status.success() {
-        return Ok(agent.to_string());
+        return Ok(());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     let reason = stderr
@@ -208,7 +268,7 @@ pub(in crate::app) fn run_send_command(
         .map(str::trim)
         .rfind(|line| !line.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| format!("send_command exited with {}", output.status));
+        .unwrap_or_else(|| format!("{key} exited with {}", output.status));
     Err(reason)
 }
 

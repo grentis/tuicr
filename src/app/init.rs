@@ -596,6 +596,8 @@ impl App {
             forge_config: crate::config::ForgeConfig::default(),
             agent_send_command: None,
             agent_send_rx: None,
+            agent_notify_command: None,
+            agent_notify_rx: None,
             next_active_heartbeat_at: std::time::Instant::now(),
             agent_watch: None,
             username: crate::model::comment::DEFAULT_AUTHOR.to_string(),
