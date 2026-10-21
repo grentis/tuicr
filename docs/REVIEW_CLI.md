@@ -109,7 +109,9 @@ this once a second, only from a `:submit` until the agent is done (or after
 five minutes with no agent waiting). A done covers every `:submit` made before
 the agent's last `review comments --needs-reply`: if you submitted again after
 that read, tuicr adds `still on your last :submit` and keeps waiting for the
-next done. It does not reload the review: `:e` shows the replies.
+next done. It does not reload the review: `:e` shows the replies. With
+`[agent] notify_command` set (see [Agent](CONFIG.md#agent)), the done that
+covers every `:submit` also runs it, e.g. for a desktop notification.
 
 Without a waiting agent, `:submit` falls back to `[agent] send_command`. For
 that, an agent registers an id instead:

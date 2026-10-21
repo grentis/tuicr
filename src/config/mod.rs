@@ -102,6 +102,10 @@ pub struct AgentConfig {
     /// agent, with `TUICR_SESSION` (the session slug) and `TUICR_AGENT` (the
     /// id from `tuicr review attach`). Unset, sending is off.
     pub send_command: Option<String>,
+    /// Shell command run when the agent reports done for every `:submit`,
+    /// with `TUICR_SESSION` and `TUICR_AGENT_MESSAGE` (its `--message`), e.g.
+    /// a desktop notification. Unset, nothing runs.
+    pub notify_command: Option<String>,
 }
 
 const DEFAULT_EXPORT_INTRO: &str =
@@ -357,7 +361,7 @@ const FORGE_KNOWN_KEYS: &[&str] = &[
     "local_diff_fallback",
 ];
 
-const AGENT_KNOWN_KEYS: &[&str] = &["send_command"];
+const AGENT_KNOWN_KEYS: &[&str] = &["send_command", "notify_command"];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
     "intro",
@@ -834,6 +838,8 @@ fn parse_agent(value: &Value, warnings: &mut Vec<String>) -> Option<AgentConfig>
 
     let cfg = AgentConfig {
         send_command: read_section_string(table, "agent", "send_command", warnings)
+            .filter(|command| !command.trim().is_empty()),
+        notify_command: read_section_string(table, "agent", "notify_command", warnings)
             .filter(|command| !command.trim().is_empty()),
     };
     (cfg != AgentConfig::default()).then_some(cfg)

@@ -287,15 +287,18 @@ comment_types = [
 see [Agents](REVIEW_CLI.md#agents)) that the review has something for it.
 Settings under the `[agent]` section are the fallback when no agent waits:
 `send_command` runs instead. With neither, `:submit` stays PR-only, as before.
+`notify_command` runs when the agent reports done (`tuicr review done`).
 
 ```toml
 [agent]
 send_command = 'herdr pane run "$TUICR_AGENT" "/tuicr-connect comments $TUICR_SESSION"'
+notify_command = 'notify-send -a tuicr "Agent done" "$TUICR_AGENT_MESSAGE"'
 ```
 
 | Key            | Default | Description |
 | -------------- | ------- | ----------- |
 | `send_command` | unset   | Shell command `:submit` runs in a local review, from the checkout's root. `TUICR_SESSION` holds the session slug and `TUICR_AGENT` the id the agent registered with `tuicr review attach`. Its last line on stderr is shown when it fails. Local reviews only: a PR review never sends. |
+| `notify_command` | unset | Shell command run, from the checkout's root, when the agent's `tuicr review done` covers every `:submit` (once per round, not for a done that leaves a `:submit` pending). `TUICR_SESSION` holds the session slug and `TUICR_AGENT_MESSAGE` the done's `--message` (empty without one). For a desktop notification: `notify-send` on Linux, `osascript -e 'display notification …'` on macOS. Its last line on stderr is shown when it fails. |
 
 Sending needs an attached agent: without one, tuicr says so and runs nothing.
 See [Agents](REVIEW_CLI.md#agents).
