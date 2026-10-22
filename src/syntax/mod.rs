@@ -648,6 +648,37 @@ mod tests {
     }
 
     #[test]
+    fn should_keep_a_stray_closing_brace_readable() {
+        // A hunk that starts inside a method: its closing brace is stray.
+        let highlighter = SyntaxHighlighter::default();
+        let lines = vec!["\t\treturn x;".to_string(), "\t}".to_string()];
+
+        let highlighted = highlighter
+            .highlight_file_lines(Path::new("Engine.java"), &lines)
+            .unwrap();
+
+        let brace = highlighted[1]
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|(_, text)| text.contains('}'))
+            .unwrap();
+        let settings = &highlighter.theme.settings;
+        assert_eq!(
+            brace.0.fg,
+            Some(SyntaxHighlighter::syntect_color_to_ratatui(
+                settings.foreground.unwrap()
+            ))
+        );
+        assert_ne!(
+            brace.0.fg,
+            Some(SyntaxHighlighter::syntect_color_to_ratatui(
+                settings.background.unwrap()
+            ))
+        );
+    }
+
+    #[test]
     fn should_detect_syntax_from_shebang_when_extensionless() {
         let highlighter = SyntaxHighlighter::default();
         let lines = vec![
