@@ -141,7 +141,7 @@ pub(super) fn highlight(hl: &SyntaxHighlighter, content: &str) -> HighlightedLin
                 };
                 let mut at = range.start;
                 for (style, piece) in runs {
-                    let style = SyntaxHighlighter::syntect_to_ratatui_style(style);
+                    let style = hl.code_style(style);
                     paint(at..at + piece.len(), style);
                     at += piece.len();
                 }
