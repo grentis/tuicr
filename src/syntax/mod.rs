@@ -188,9 +188,7 @@ impl SyntaxHighlighter {
                 .map(|ranges| {
                     let mut spans: Vec<(Style, String)> = ranges
                         .into_iter()
-                        .map(|(style, text)| {
-                            (Self::syntect_to_ratatui_style(style), text.to_string())
-                        })
+                        .map(|(style, text)| (self.code_style(style), text.to_string()))
                         .collect();
                     // Strip trailing \n that syntect includes from the input.
                     // Leaving it causes ratatui to allocate an extra buffer cell,
@@ -328,6 +326,21 @@ impl SyntaxHighlighter {
         for hunk in &mut file.hunks {
             self.rehighlight_hunk_in_place(hunk, &file_path);
         }
+    }
+
+    /// Convert a code token's style. A token the theme sets on its own
+    /// background, like a stray brace in a hunk that starts inside a block,
+    /// gets the theme's default foreground: tuicr drops that background for
+    /// its diff colors, and the token's foreground can match the editor
+    /// background.
+    pub(super) fn code_style(&self, mut style: syntect::highlighting::Style) -> Style {
+        use syntect::highlighting::Color as SyntectColor;
+
+        let settings = &self.theme.settings;
+        if style.background != settings.background.unwrap_or(SyntectColor::WHITE) {
+            style.foreground = settings.foreground.unwrap_or(SyntectColor::BLACK);
+        }
+        Self::syntect_to_ratatui_style(style)
     }
 
     fn syntect_to_ratatui_style(style: syntect::highlighting::Style) -> Style {
