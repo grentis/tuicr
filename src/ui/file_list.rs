@@ -449,6 +449,33 @@ mod tests {
     }
 
     #[test]
+    fn should_wheel_the_file_list_past_the_diffs_file_and_follow_a_new_one() {
+        let paths: Vec<String> = (0..30).map(|i| format!("f{i:02}.rs")).collect();
+        let mut app = app_with(&paths.iter().map(String::as_str).collect::<Vec<_>>());
+        app.focused_panel = FocusedPanel::Diff;
+        let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+        let mut draw_list = |app: &mut App| {
+            terminal
+                .draw(|frame| super::render_file_list(frame, app, frame.area()))
+                .unwrap();
+            buffer_text(terminal.backend().buffer())
+        };
+        draw_list(&mut app);
+
+        for _ in 0..3 {
+            app.file_list_viewport_scroll_down(6);
+            draw_list(&mut app);
+        }
+        let scrolled = draw_list(&mut app);
+        app.diff_state.current_file_idx = 2;
+        let followed = draw_list(&mut app);
+
+        assert!(scrolled.contains("f18.rs"), "{scrolled}");
+        assert!(!scrolled.contains("f00.rs"), "{scrolled}");
+        assert!(followed.contains("f02.rs"), "{followed}");
+    }
+
+    #[test]
     fn compact_folders_scroll_preserves_partial_wide_and_combining_graphemes() {
         use ratatui::text::Line;
         let line = Line::from("界e\u{301}/next");
