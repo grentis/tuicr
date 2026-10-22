@@ -35,20 +35,23 @@ impl App {
     }
 
     /// Scroll the file-list viewport down by `lines` without moving the
-    /// selection unless it would fall off the top of the viewport.
+    /// selection unless it would fall off the top of the viewport. With the
+    /// diff focused the selection is the diff's file and stays put.
     pub fn file_list_viewport_scroll_down(&mut self, lines: usize) {
         let total = self.build_visible_items().len();
         let viewport = self.file_list_state.viewport_height.max(1);
         let max_offset = total.saturating_sub(viewport);
         let new_offset = (self.file_list_state.list_state.offset() + lines).min(max_offset);
         *self.file_list_state.list_state.offset_mut() = new_offset;
-        if self.file_list_state.selected() < new_offset {
+        if self.focused_panel != FocusedPanel::Diff && self.file_list_state.selected() < new_offset
+        {
             self.file_list_state.select(new_offset);
         }
     }
 
     /// Scroll the file-list viewport up by `lines` without moving the
-    /// selection unless it would fall off the bottom of the viewport.
+    /// selection unless it would fall off the bottom of the viewport. With
+    /// the diff focused the selection is the diff's file and stays put.
     pub fn file_list_viewport_scroll_up(&mut self, lines: usize) {
         let viewport = self.file_list_state.viewport_height.max(1);
         let new_offset = self
@@ -58,7 +61,8 @@ impl App {
             .saturating_sub(lines);
         *self.file_list_state.list_state.offset_mut() = new_offset;
         let max_visible = (new_offset + viewport).saturating_sub(1);
-        if self.file_list_state.selected() > max_visible {
+        if self.focused_panel != FocusedPanel::Diff && self.file_list_state.selected() > max_visible
+        {
             self.file_list_state.select(max_visible);
         }
     }
