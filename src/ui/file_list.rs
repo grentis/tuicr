@@ -88,12 +88,17 @@ pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // When diff panel is focused, sync file list selection to current view
     // But preserve the current offset to not interfere with manual scrolling
+    let mut follow_selection = true;
     if app.focused_panel == FocusedPanel::Diff {
         let current_file_idx = app.diff_state.current_file_idx;
+        follow_selection = false;
         for (tree_idx, item) in visible_items.iter().enumerate() {
             if let FileTreeItem::File { file_idx, .. } = item
                 && *file_idx == current_file_idx
             {
+                // Scroll to the diff's file once, when it first shows here.
+                follow_selection = app.file_list_state.followed_file != Some(current_file_idx);
+                app.file_list_state.followed_file = Some(current_file_idx);
                 if app.file_list_state.selected() != tree_idx {
                     // Save current offset before changing selection
                     let current_offset = app.file_list_state.list_state.offset();
@@ -199,7 +204,17 @@ pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
         .highlight_style(styles::selected_style(&app.theme))
         .block(block);
 
+    // Rendering scrolls the list to show its selection. While the diff stays
+    // on one file, the list stays where the wheel left it.
+    let selected = app.file_list_state.list_state.selected();
+    let offset = app.file_list_state.list_state.offset();
+    let in_view = |row: usize| (offset..offset + inner.height as usize).contains(&row);
+    if !follow_selection && selected.is_some_and(|row| !in_view(row)) {
+        app.file_list_state.list_state.select(None);
+        *app.file_list_state.list_state.offset_mut() = offset;
+    }
     frame.render_stateful_widget(list, area, &mut app.file_list_state.list_state);
+    app.file_list_state.list_state.select(selected);
 
     // Park the terminal cursor at the end of the prompt buffer so typing has
     // a visible insertion point.

@@ -1652,6 +1652,8 @@ pub struct FileListState {
     pub viewport_width: usize,    // Set during render
     pub viewport_height: usize,   // Set during render
     pub max_content_width: usize, // Set during render
+    /// The diff file the list last scrolled to, set during render.
+    pub followed_file: Option<usize>,
 }
 
 impl FileListState {
