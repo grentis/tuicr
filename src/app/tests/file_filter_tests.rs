@@ -511,6 +511,20 @@ fn should_keep_the_progress_fraction_over_the_whole_population_while_hiding() {
 }
 
 #[test]
+fn should_count_only_reviewed_files_in_the_diff() {
+    let mut app = app_with(&["a.rs", "b.rs"]);
+    mark_reviewed(&mut app, "a.rs");
+    mark_reviewed(&mut app, "b.rs");
+
+    // A narrower commit selection: b.rs keeps its mark in the session.
+    app.diff_files
+        .retain(|file| file.display_path() == Path::new("a.rs"));
+
+    assert_eq!(app.reviewed_count(), 1);
+    assert_eq!(app.file_count(), 1);
+}
+
+#[test]
 fn should_still_scope_the_progress_fraction_to_the_include_exclude_filters() {
     let mut app = app_with(&["src/a.rs", "src/b.rs", "docs/guide.md"]);
     mark_reviewed(&mut app, "src/a.rs");
