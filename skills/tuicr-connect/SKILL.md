@@ -28,14 +28,20 @@ Run the launcher from the checkout being worked on:
 
 It reuses the tuicr already reviewing the checkout's branch, or opens one in
 a new herdr tab of the agent's workspace and waits for it to come up. Either
-way the user stays where they are: the new tab is not focused. It returns at once with JSON:
+way the user stays where they are: the new tab is not focused. The agent's
+pane and workspace are the ones herdr shows running this Claude session (or
+the session it resumed or forked from), not the inherited `HERDR_PANE_ID` /
+`HERDR_WORKSPACE_ID`, which go stale when a resumed session outlives the pane
+that started it. It returns at once with JSON:
 
 ```json
 {"session": "owner/repo@branch/branch", "repo": "/path", "branch": "branch", "agent": "w1N:p1", "how": "connected"}
 ```
 
 `how` is `connected` (an instance was running) or `opened` (a new tab).
-Remember `session` and `repo` for the rest of the conversation.
+Remember `session` and `repo` for the rest of the conversation. Check that
+`agent` starts with the workspace the user is in (`herdr workspace list`
+shows the focused one); if it does not, say so instead of carrying on.
 
 Then start the wait, **in the background** (the Bash tool's
 `run_in_background`), so it never blocks you:
