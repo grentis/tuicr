@@ -2,21 +2,35 @@
 # Connect the agent in this herdr pane to the tuicr reviewing a checkout.
 #
 # A tuicr already reviewing the checkout's branch (`tuicr -b`) is reused,
-# where it is, without switching to it; otherwise one is started in a new
-# herdr tab of the agent's workspace (the one its pane is in now, found by
-# Claude session rather than the inherited HERDR_* variables), left in the
-# background, and awaited. Either way the agent's pane is attached to its
-# session (`tuicr review attach`), so `:submit` in tuicr runs `[agent]
-# send_command` with this pane's id in TUICR_AGENT. Prints the session as
+# where it is, without switching to it; otherwise one is started, left in the
+# background, and awaited. `--in` picks where: a pane split off the agent's
+# own (the one herdr shows running this Claude session rather than the
+# inherited HERDR_* variables; or, when a pane is already right of it, that
+# pane split top and bottom; the default), a new herdr tab of the agent's
+# workspace, or a window of the desktop's default terminal, outside herdr.
+# Quitting tuicr closes the pane or tab it was started in. Either way the
+# agent's pane is attached to its session (`tuicr review attach`), so
+# `:submit` in tuicr runs `[agent] send_command` with this pane's id in
+# TUICR_AGENT. Prints the session as
 # JSON and returns at once: nothing here waits on the review.
 #
-# Usage: tuicr-connect.sh [checkout]   (default: the current directory)
+# Usage: tuicr-connect.sh [--in split|tab|window] [checkout]
+#        (default: a split, for the current directory)
 #
 # TUICR_LAUNCH_COMMAND  what to start when nothing is running (default: tuicr -b)
 # TUICR_CONNECT_TIMEOUT seconds to wait for it to come up (default: 60)
+# TUICR_CONNECT_IN      where to start it when --in is not given (default: split)
 
 set -euo pipefail
 
+where=${TUICR_CONNECT_IN:-split}
+while (($#)); do
+  case $1 in
+    --in) where=${2:-}; shift 2 || shift ;;
+    --in=*) where=${1#--in=}; shift ;;
+    *) break ;;
+  esac
+done
 dir=${1:-$PWD}
 launch=${TUICR_LAUNCH_COMMAND:-tuicr -b}
 timeout=${TUICR_CONNECT_TIMEOUT:-60}
@@ -26,6 +40,10 @@ die() {
   exit 1
 }
 
+case $where in
+  tab | split | window) ;;
+  *) die "--in takes split, tab or window, not '$where'" ;;
+esac
 [[ ${HERDR_ENV:-} == 1 ]] || die "not running inside a herdr pane"
 root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || die "$dir is not a git checkout"
 branch=$(git -C "$root" branch --show-current)
@@ -86,9 +104,39 @@ if ((${#found[@]} == 1)); then
   read -r session _ <<<"${found[0]}"
   how=connected
 else
-  pane=$(herdr tab create --workspace "$workspace" --cwd "$root" --label "tuicr $branch" --no-focus |
-    jq -er '.result.root_pane.pane_id') || die "could not open a herdr tab"
-  herdr pane run "$pane" "$launch" >/dev/null
+  case $where in
+    tab)
+      pane=$(herdr tab create --workspace "$workspace" --cwd "$root" --label "tuicr $branch" --no-focus |
+        jq -er '.result.root_pane.pane_id') || die "could not open a herdr tab"
+      # Quitting tuicr closes the tab; a failed start keeps it, error shown.
+      herdr pane run "$pane" "$launch && exit" >/dev/null
+      opened_in="pane $pane"
+      ;;
+    split)
+      # A pane already right of the agent's is split in two, top and bottom,
+      # rather than squeezing a third column in.
+      target=$agent direction=right
+      right=$(herdr pane neighbor --pane "$agent" --direction right |
+        jq -r '.result.neighbor.neighbor_pane_id // empty') || true
+      [[ -n $right ]] && target=$right direction=down
+      pane=$(herdr pane split "$target" --direction "$direction" --cwd "$root" --no-focus |
+        jq -er '.result.pane.pane_id') || die "could not split pane $target"
+      # Quitting tuicr closes the pane; a failed start keeps it, error shown.
+      herdr pane run "$pane" "$launch && exit" >/dev/null
+      opened_in="pane $pane"
+      ;;
+    window)
+      # The window is not a herdr pane: drop the agent pane's IDs so nothing
+      # in it mistakes itself for one. The socket path stays, so tuicr's
+      # [agent] commands still reach herdr.
+      command -v xdg-terminal-exec >/dev/null || die "no xdg-terminal-exec to open a terminal window"
+      run=(xdg-terminal-exec --app-id=org.omarchy.tuicr --title="tuicr $branch" --dir="$root" -e bash -lc "$launch")
+      command -v uwsm-app >/dev/null && run=(uwsm-app -- "${run[@]}")
+      env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+        setsid -f "${run[@]}" </dev/null >/dev/null 2>&1 || die "could not open a terminal window"
+      opened_in="a terminal window"
+      ;;
+  esac
   session=
   deadline=$((SECONDS + timeout))
   while ((SECONDS < deadline)); do
@@ -96,7 +144,7 @@ else
     [[ -n $session ]] && break
     sleep 1
   done
-  [[ -n $session ]] || die "'$launch' did not start a review of $branch within ${timeout}s (pane $pane)"
+  [[ -n $session ]] || die "'$launch' did not start a review of $branch within ${timeout}s ($opened_in)"
   how=opened
 fi
 
