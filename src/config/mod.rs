@@ -2342,6 +2342,15 @@ mod tests {
         assert!(outcome.warnings.is_empty());
     }
 
+    #[test]
+    fn should_parse_open_reviewed_from_tree() {
+        let outcome = parse_config("open_reviewed_from_tree = true\n");
+        assert_eq!(
+            outcome.config.and_then(|cfg| cfg.open_reviewed_from_tree),
+            Some(true)
+        );
+        assert!(outcome.warnings.is_empty());
+    }
 
     // forge
 
