@@ -15,6 +15,7 @@ mod file_session_identity_tests;
 mod find_source_line_tests;
 mod locked_comment_tests;
 mod mention_tests;
+mod open_reviewed_from_tree_tests;
 mod persistence_merge_tests;
 mod pr_comment_tests;
 mod pr_info_tests;
