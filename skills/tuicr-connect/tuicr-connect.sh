@@ -3,7 +3,9 @@
 #
 # A tuicr already reviewing the checkout's branch (`tuicr -b`) is reused,
 # where it is, without switching to it; otherwise one is started in a new
-# herdr tab of the agent's workspace, left in the background, and awaited. Either way the agent's pane is attached to its
+# herdr tab of the agent's workspace (the one its pane is in now, found by
+# Claude session rather than the inherited HERDR_* variables), left in the
+# background, and awaited. Either way the agent's pane is attached to its
 # session (`tuicr review attach`), so `:submit` in tuicr runs `[agent]
 # send_command` with this pane's id in TUICR_AGENT. Prints the session as
 # JSON and returns at once: nothing here waits on the review.
@@ -28,9 +30,43 @@ die() {
 root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || die "$dir is not a git checkout"
 branch=$(git -C "$root" branch --show-current)
 [[ -n $branch ]] || die "$root has a detached HEAD; a branch review needs a branch"
-current=$(herdr pane current) || die "could not find this herdr pane"
-agent=$(jq -er '.result.pane.pane_id' <<<"$current") || die "could not find this herdr pane"
-workspace=$(jq -er '.result.pane.workspace_id' <<<"$current") || die "could not find this pane's workspace"
+# The agent's pane and workspace. HERDR_PANE_ID and HERDR_WORKSPACE_ID (what
+# `herdr pane current` reads) are inherited, so they go stale when the agent
+# outlives its pane: a session resumed or forked through the Claude daemon
+# keeps the IDs of the pane that started the daemon. Herdr tags every agent
+# pane with its Claude session, so the pane is looked up by this session's ID,
+# then by the session it resumed or forked from; the inherited IDs are only
+# the fallback for an agent herdr does not know.
+session_ids() {
+  [[ -n ${CLAUDE_CODE_SESSION_ID:-} ]] && printf '%s\n' "$CLAUDE_CODE_SESSION_ID"
+  [[ -n ${CLAUDE_PID:-} && -r /proc/$CLAUDE_PID/cmdline ]] || return 0
+  tr '\0' '\n' </proc/"$CLAUDE_PID"/cmdline |
+    awk 'prev == "--session-id" || prev == "--resume" { print } { prev = $0 }' |
+    sed 's|.*/||; s|\.jsonl$||'
+}
+
+agent=
+workspace=
+panes=$(herdr pane list) || die "could not list the herdr panes"
+while read -r id; do
+  [[ -n $id ]] || continue
+  mapfile -t matches < <(jq -r --arg id "$id" '
+    .result.panes[] | select(.agent_session.value == $id)
+                    | "\(.pane_id) \(.workspace_id)"' <<<"$panes")
+  if ((${#matches[@]} > 1)); then
+    die "several herdr panes run Claude session $id: $(printf '%s ' "${matches[@]%% *}")"
+  fi
+  if ((${#matches[@]} == 1)); then
+    read -r agent workspace <<<"${matches[0]}"
+    break
+  fi
+done < <(session_ids | awk '!seen[$0]++')
+
+if [[ -z $agent ]]; then
+  current=$(herdr pane current) || die "could not find this herdr pane"
+  agent=$(jq -er '.result.pane.pane_id' <<<"$current") || die "could not find this herdr pane"
+  workspace=$(jq -er '.result.pane.workspace_id' <<<"$current") || die "could not find this pane's workspace"
+fi
 
 # "<slug> <pid>" for each running tuicr reviewing this checkout's branch.
 # Slugs write a branch's `/` as `-` (tuicr's `sanitize_ref`).
