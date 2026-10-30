@@ -80,6 +80,7 @@ pub(crate) fn annotation_row_height(app: &App, idx: usize) -> usize {
 
         // Pre-wrapped by comment_panel::wrap_segments to inner width - 1.
         AnnotatedLine::ReviewComment { .. }
+        | AnnotatedLine::DetachedComment { .. }
         | AnnotatedLine::FileComment { .. }
         | AnnotatedLine::LineComment { .. }
         | AnnotatedLine::IssueComment { .. } => 1,
@@ -220,6 +221,15 @@ fn full_row_text(app: &App, idx: usize, annotation: &AnnotatedLine) -> String {
                 diff_view::REVIEW_COMMENTS_HEADER_PREFIX,
                 diff_view::HEADER_RULE
             )
+        }
+
+        AnnotatedLine::DetachedFileHeader { comment_idx } => {
+            let path = app
+                .detached_comments()
+                .get(*comment_idx)
+                .map(|detached| diff_view::detached_file_header_text(detached.path))
+                .unwrap_or_default();
+            format!("{indicator_spaced}{path}{}", diff_view::HEADER_RULE)
         }
 
         AnnotatedLine::IssueCommentsHeader => {
@@ -400,6 +410,7 @@ fn full_row_text(app: &App, idx: usize, annotation: &AnnotatedLine) -> String {
 
         // Comment-ish rows are pre-wrapped and handled by the outer match.
         AnnotatedLine::ReviewComment { .. }
+        | AnnotatedLine::DetachedComment { .. }
         | AnnotatedLine::RemoteReviewSummaryLine { .. }
         | AnnotatedLine::FileComment { .. }
         | AnnotatedLine::LineComment { .. }

@@ -593,6 +593,14 @@ pub(super) fn render_side_by_side_diff(frame: &mut Frame, app: &mut App, area: R
         }
     }
 
+    crate::ui::diff_view::append_detached_comments(
+        app,
+        &mut lines,
+        &mut line_idx,
+        ctx.current_line_idx,
+        ctx.panel_width.saturating_sub(1),
+    );
+
     if is_review_comment_mode && app.editing_comment_id.is_none() {
         let (input_lines, cursor_info) = comment_panel::format_comment_input_lines(
             &app.theme,

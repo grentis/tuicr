@@ -8,7 +8,7 @@ use ratatui::{
 use crate::app::{
     AnnotatedLine, App, DiffViewMode, ExpandDirection, GAP_EXPAND_BATCH, VisualSelection,
 };
-use crate::model::{Comment, DiffFile, DiffHunk, DiffLine, LineOrigin, LineSide};
+use crate::model::{Comment, DiffFile, DiffHunk, DiffLine, LineOrigin, LineRange, LineSide};
 use crate::theme::Theme;
 use crate::ui::comment_panel;
 use crate::ui::diff_side_by_side::render_side_by_side_diff;
@@ -349,6 +349,65 @@ pub(super) fn diff_stat_title(app: &App) -> Line<'static> {
             Style::default().fg(theme.diff_del),
         ),
     ])
+}
+
+/// Text before `HEADER_RULE` for the header of a file no longer in the diff.
+pub(super) fn detached_file_header_text(path: &std::path::Path) -> String {
+    format!("═══ {} · not in the diff ", path.display())
+}
+
+/// Comments on files no longer in the diff, each file under its header, as
+/// the review section shows them. Both renderers call it, mirroring the
+/// `DetachedFileHeader` and `DetachedComment` annotations.
+pub(super) fn append_detached_comments(
+    app: &App,
+    lines: &mut Vec<Line<'_>>,
+    line_idx: &mut usize,
+    current_line_idx: usize,
+    width: usize,
+) {
+    let indicator_style = styles::current_line_indicator_style(&app.theme);
+    let header_style = styles::file_header_style(&app.theme);
+    let mut last_path = None;
+    for detached in app.detached_comments() {
+        if last_path != Some(detached.path) {
+            last_path = Some(detached.path);
+            lines.push(Line::from(vec![
+                Span::styled(
+                    cursor_indicator_spaced(*line_idx, current_line_idx),
+                    indicator_style,
+                ),
+                Span::styled(detached_file_header_text(detached.path), header_style),
+                Span::styled(HEADER_RULE, header_style),
+            ]));
+            *line_idx += 1;
+        }
+        let comment = detached.comment;
+        let line_range = detached
+            .line
+            .map(|line| comment.line_range.unwrap_or(LineRange::single(line)));
+        let comment_lines = comment_panel::format_comment_lines(
+            &app.theme,
+            comment_type_presentation(app, &comment.comment_type),
+            &comment.content,
+            line_range,
+            width,
+            app.comment_box_author(comment),
+            app.reply_label(comment),
+            app.thread_chrome(comment),
+        );
+        for mut comment_line in comment_lines {
+            comment_line.spans.insert(
+                0,
+                Span::styled(
+                    cursor_indicator(*line_idx, current_line_idx),
+                    indicator_style,
+                ),
+            );
+            lines.push(comment_line);
+            *line_idx += 1;
+        }
+    }
 }
 
 pub(super) fn cursor_indicator(line_idx: usize, current_line_idx: usize) -> &'static str {

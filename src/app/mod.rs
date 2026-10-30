@@ -297,6 +297,11 @@ pub enum AnnotatedLine {
     ReviewCommentsHeader,
     /// A review-level comment line (part of a multi-line comment box)
     ReviewComment { comment_idx: usize },
+    /// The header naming a file no longer in the diff, above its comments.
+    /// `comment_idx` is its first comment in [`App::detached_comments`].
+    DetachedFileHeader { comment_idx: usize },
+    /// A line of a comment on a file no longer in the diff
+    DetachedComment { comment_idx: usize },
     /// A read-only line of a rendered remote review summary (PR review body).
     /// Renders at review scope, parallel to `ReviewComment` for local drafts.
     RemoteReviewSummaryLine { summary_idx: usize },
@@ -491,6 +496,8 @@ pub fn annotation_file_idx(annotation: &AnnotatedLine) -> Option<usize> {
         | AnnotatedLine::IssueComment { .. }
         | AnnotatedLine::ReviewCommentsHeader
         | AnnotatedLine::ReviewComment { .. }
+        | AnnotatedLine::DetachedFileHeader { .. }
+        | AnnotatedLine::DetachedComment { .. }
         | AnnotatedLine::RemoteReviewSummaryLine { .. }
         | AnnotatedLine::Expander { .. }
         | AnnotatedLine::HiddenLines { .. }
@@ -1084,6 +1091,7 @@ pub struct ViewedSyncWorker {
 }
 
 pub use branch::default_branch_base;
+pub use comments::DetachedComment;
 pub use commit_dialog::{CommitDraft, CommitEvent, CommitField};
 pub use git_actions::{DiscardRequest, GitFileState};
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
@@ -1706,6 +1714,10 @@ impl CommentNavigatorState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommentNavigatorKey {
     Review {
+        comment_idx: usize,
+    },
+    /// An entry of [`App::detached_comments`].
+    Detached {
         comment_idx: usize,
     },
     File {
