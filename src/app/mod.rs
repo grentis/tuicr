@@ -1598,6 +1598,9 @@ pub struct App {
     pub commit_order: CommitOrder,
     /// Config `click_toggles_folders`: clicking a folder folds it.
     pub click_toggles_folders: bool,
+    /// Config `open_reviewed_from_tree`: opening a reviewed file from the
+    /// file tree shows its body, keeping the mark.
+    pub open_reviewed_from_tree: bool,
     /// Config `list_reviewed_file_comments`: the navigator also lists collapsed
     /// reviewed files' comments.
     pub list_reviewed_file_comments: bool,

@@ -1440,6 +1440,11 @@ impl App {
     }
 
     pub(in crate::app) fn update_current_file_from_cursor(&mut self) {
+        self.follow_current_file_from_cursor();
+        self.fold_opened_reviewed_file_left_for(self.diff_state.current_file_idx);
+    }
+
+    fn follow_current_file_from_cursor(&mut self) {
         // Single-file view renders one file at a time. `cursor_line` is
         // interpreted relative to that single file's content, so mapping
         // it back through cumulative-file-heights would wrongly resolve

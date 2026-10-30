@@ -54,6 +54,7 @@ review_watch_interval_ms = 1000
 single_file_view = false
 username = "user"
 click_toggles_folders = true
+open_reviewed_from_tree = false
 list_reviewed_file_comments = false
 list_comment_replies = false
 jump_to_next_unreviewed = false
@@ -135,6 +136,7 @@ session_header = true
 | `branch_base`              | origin/HEAD's branch, else `main`, else `master` | Base a bare `--branch` / `-b` compares the current branch against (merge-base to working tree), unless the repo's `tuicr.branchBase` git config names one. Falls back to `origin/<base>` when the base is not a local branch. `-b <base>` overrides it per run. |
 | `diff_watch_interval_ms`   | `0`          | Poll interval for re-reading the local diff so uncommitted changes show without `:e`. The same tick refreshes the commit pane, including the "Staged changes" and "Unstaged changes" rows. A commit-range review, from `-r` or picked in the commit selector, keeps its range in the pane. With `-w` it refreshes only those two rows. Without it the pane never gains them. `0` (default) disables it. Ignored for PR and `--all-files` reviews. |
 | `click_toggles_folders`    | `true`       | Expand or collapse a folder in the file tree when it is clicked. `false` makes the click only select the folder, leaving `Enter` to toggle it. |
+| `open_reviewed_from_tree`  | `false`      | Opening a file marked reviewed from the file tree (click or `Enter`) shows its body without unmarking it, as a jump from the comment list does. It folds again when it is opened a second time, or when the cursor or the tree selection moves to another file. |
 | `list_reviewed_file_comments` | `false`      | List the comments and threads of files marked reviewed in the comment navigator too. Reviewed files collapse to their header in the diff, and by default their comments leave the list with them. With `true` they stay listed, dimmed, and `Enter` opens the file at the comment without unmarking it. |
 | `list_comment_replies`     | `false`      | List each reply of a forge thread in the comment navigator, indented under the thread as `↳ @author`, and set local replies to a thread apart the same way. Every comment and thread, yours included, is listed with its author ahead of the location (`@alice src/lib.rs:12`). `Enter` on a reply moves to it inside the thread. `false` lists a thread as one entry. |
 | `jump_to_next_unreviewed`  | `false`      | After `r` marks a file reviewed in the diff, move the cursor to the next file not yet reviewed, as `}` would, wrapping round to the first. The status bar names the file marked, and `Ctrl-o` goes back to it. When it was the last one, the cursor stays and the status bar says so. Unmarking never moves. `false` keeps the cursor on the file just marked. |
