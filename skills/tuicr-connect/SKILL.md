@@ -1,6 +1,6 @@
 ---
 name: tuicr-connect
-description: Connect to the tuicr reviewing this checkout's branch, opening one in a new herdr tab if none runs, and wait in the background for the user's `:submit`; then work through the review comments waiting on you and answer each in its thread. Use when the user types /tuicr-connect, when the background `tuicr review wait` finishes, or when a "/tuicr-connect comments" message arrives. (Upstream's /tuicr skill, which opens tuicr on a diff and reads its comments when it closes, is a separate skill.)
+description: Connect to the tuicr reviewing this checkout's branch, opening one if none runs (in a split of the agent's pane, a new herdr tab, or a terminal window), and wait in the background for the user's `:submit`; then work through the review comments waiting on you and answer each in its thread. Use when the user types /tuicr-connect, when the background `tuicr review wait` finishes, or when a "/tuicr-connect comments" message arrives. (Upstream's /tuicr skill, which opens tuicr on a diff and reads its comments when it closes, is a separate skill.)
 ---
 
 # tuicr connection
@@ -23,12 +23,25 @@ tuicr tells your messages from everyone else's.
 Run the launcher from the checkout being worked on:
 
 ```bash
-~/.claude/skills/tuicr-connect/tuicr-connect.sh /path/to/checkout
+~/.claude/skills/tuicr-connect/tuicr-connect.sh [--in split|tab|window] /path/to/checkout
 ```
 
-It reuses the tuicr already reviewing the checkout's branch, or opens one in
-a new herdr tab of the agent's workspace and waits for it to come up. Either
-way the user stays where they are: the new tab is not focused. The agent's
+It reuses the tuicr already reviewing the checkout's branch, wherever it
+runs, or opens one and waits for it to come up. `--in` says where a new one
+opens; pass what the user asked for:
+
+- `split` (the default; `/tuicr-connect`, "in a pane", "next to you"): a
+  pane split off the agent's own, to its right, in the same tab; when a pane
+  is already right of the agent's, that pane is split instead, with tuicr
+  below it. Not focused; quitting tuicr closes the pane.
+- `tab` (`/tuicr-connect tab`, "in a tab"): a new herdr tab of the agent's
+  workspace, not focused, so the user stays where they are. Quitting tuicr
+  closes the tab.
+- `window` (`/tuicr-connect window`, "in a window", "outside herdr"): a
+  window of the desktop's default terminal (`xdg-terminal-exec`), outside
+  herdr. The desktop gives it focus.
+
+`TUICR_CONNECT_IN` sets the default when `--in` is not given. The agent's
 pane and workspace are the ones herdr shows running this Claude session (or
 the session it resumed or forked from), not the inherited `HERDR_PANE_ID` /
 `HERDR_WORKSPACE_ID`, which go stale when a resumed session outlives the pane
@@ -38,7 +51,8 @@ that started it. It returns at once with JSON:
 {"session": "owner/repo@branch/branch", "repo": "/path", "branch": "branch", "agent": "w1N:p1", "how": "connected"}
 ```
 
-`how` is `connected` (an instance was running) or `opened` (a new tab).
+`how` is `connected` (an instance was running) or `opened` (a new one, where
+`--in` said).
 Remember `session` and `repo` for the rest of the conversation. Check that
 `agent` starts with the workspace the user is in (`herdr workspace list`
 shows the focused one); if it does not, say so instead of carrying on.
