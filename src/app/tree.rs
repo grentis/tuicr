@@ -12,12 +12,66 @@ impl App {
         let new_idx = (self.file_list_state.selected() + n).min(max_idx);
         self.file_list_state.select(new_idx);
         self.follow_file_list_in_single_file_view();
+        self.fold_tree_opened_file_left_for_selection();
     }
 
     pub fn file_list_up(&mut self, n: usize) {
         let new_idx = self.file_list_state.selected().saturating_sub(n);
         self.file_list_state.select(new_idx);
         self.follow_file_list_in_single_file_view();
+        self.fold_tree_opened_file_left_for_selection();
+    }
+
+    /// Open a file picked in the file tree. With `open_reviewed_from_tree`, a
+    /// file collapsed as reviewed shows its body without losing the mark,
+    /// picking it again folds it, and the file opened this way before folds.
+    pub fn open_file_from_tree(&mut self, file_idx: usize) {
+        if self.open_reviewed_from_tree {
+            let previous = self.revealed_reviewed_file.take();
+            let picked_again = previous.is_some()
+                && previous.as_ref() == self.diff_files.get(file_idx).map(|f| f.display_path());
+            if !picked_again && self.should_collapse_file(file_idx) {
+                self.reveal_reviewed_file(file_idx);
+            }
+            if self.revealed_reviewed_file != previous {
+                self.rebuild_annotations();
+            }
+        }
+        self.jump_to_file(file_idx);
+    }
+
+    /// With `open_reviewed_from_tree`, fold the reviewed file opened from the
+    /// tree once the focus leaves it for `file_idx`, keeping the rows on
+    /// screen where they are.
+    pub(in crate::app) fn fold_opened_reviewed_file_left_for(&mut self, file_idx: usize) {
+        if !self.open_reviewed_from_tree {
+            return;
+        }
+        let Some(opened_idx) = self.revealed_reviewed_file.as_ref().and_then(|revealed| {
+            self.diff_files
+                .iter()
+                .position(|file| file.display_path() == revealed)
+        }) else {
+            return;
+        };
+        if opened_idx == file_idx {
+            return;
+        }
+        let before = self.total_lines();
+        self.revealed_reviewed_file = None;
+        self.rebuild_annotations();
+        // Rows above the cursor went away: shift up by as many.
+        if opened_idx < file_idx {
+            let removed = before.saturating_sub(self.total_lines());
+            self.diff_state.cursor_line = self.diff_state.cursor_line.saturating_sub(removed);
+            self.diff_state.scroll_offset = self.diff_state.scroll_offset.saturating_sub(removed);
+        }
+    }
+
+    fn fold_tree_opened_file_left_for_selection(&mut self) {
+        if let Some(FileTreeItem::File { file_idx, .. }) = self.get_selected_tree_item() {
+            self.fold_opened_reviewed_file_left_for(file_idx);
+        }
     }
 
     /// In single-file view the diff panel always shows one file at a time,

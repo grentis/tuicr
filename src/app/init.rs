@@ -660,6 +660,7 @@ impl App {
             show_commit_selector: false,
             commit_order: CommitOrder::default(),
             click_toggles_folders: true,
+            open_reviewed_from_tree: false,
             list_reviewed_file_comments: false,
             list_comment_replies: false,
             jump_to_next_unreviewed: false,

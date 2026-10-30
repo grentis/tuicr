@@ -375,7 +375,7 @@ fn handle_left_click(app: &mut App, pos: Position) {
                     }
                 }
                 FileTreeItem::File { file_idx, .. } => {
-                    app.jump_to_file(file_idx);
+                    app.open_file_from_tree(file_idx);
                     app.focused_panel = FocusedPanel::Diff;
                 }
             }
@@ -1750,7 +1750,7 @@ pub fn handle_file_list_action(app: &mut App, action: Action) {
                 match item {
                     FileTreeItem::Directory { path, .. } => app.toggle_directory(&path),
                     FileTreeItem::File { file_idx, .. } => {
-                        app.jump_to_file(file_idx);
+                        app.open_file_from_tree(file_idx);
                         app.focused_panel = FocusedPanel::Diff;
                     }
                 }

@@ -345,6 +345,11 @@ fn main() -> anyhow::Result<()> {
         .as_ref()
         .and_then(|cfg| cfg.click_toggles_folders)
         .unwrap_or(true);
+    app.open_reviewed_from_tree = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.open_reviewed_from_tree)
+        .unwrap_or(false);
     app.list_reviewed_file_comments = config_outcome
         .config
         .as_ref()
