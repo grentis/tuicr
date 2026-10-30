@@ -16,14 +16,75 @@ enum SummaryAnnotationTarget {
     },
 }
 
+/// A comment on a file no longer in the diff (renamed, deleted, or
+/// reverted). It has nowhere to render in the diff, so the review section
+/// lists it under its path.
+pub struct DetachedComment<'a> {
+    pub path: &'a Path,
+    pub line: Option<u32>,
+    /// Its index among the file's (or the line's) comments.
+    pub index: usize,
+    pub comment: &'a Comment,
+}
+
 impl App {
+    /// Comments on files no longer in the diff, by path then line, threads
+    /// in order. None while a commit selection narrows the diff: its other
+    /// files are only out of view.
+    pub fn detached_comments(&self) -> Vec<DetachedComment<'_>> {
+        if Self::is_strict_commit_selection(self.commit_selection_range, self.review_commits.len())
+        {
+            return Vec::new();
+        }
+        let in_diff: HashSet<&Path> = self
+            .diff_files
+            .iter()
+            .map(|file| file.display_path().as_path())
+            .collect();
+        let mut files: Vec<_> = self
+            .session
+            .files
+            .iter()
+            .filter(|(path, _)| !in_diff.contains(path.as_path()))
+            .collect();
+        files.sort_by_key(|(path, _)| *path);
+        let mut detached = Vec::new();
+        for (path, review) in files {
+            for (index, comment) in review.file_comments.iter().enumerate() {
+                detached.push(DetachedComment {
+                    path,
+                    line: None,
+                    index,
+                    comment,
+                });
+            }
+            let mut lines: Vec<_> = review.line_comments.iter().collect();
+            lines.sort_by_key(|(line, _)| **line);
+            for (line, comments) in lines {
+                for (index, comment) in comments.iter().enumerate() {
+                    detached.push(DetachedComment {
+                        path,
+                        line: Some(*line),
+                        index,
+                        comment,
+                    });
+                }
+            }
+        }
+        detached
+    }
+
     /// Whether the `═══ Review Comments ═══` section has anything to show:
-    /// a remote review summary, a local review-level comment, or a visible
-    /// review-level (line: None) remote thread. Mirrors exactly what the
-    /// section renders, so the header gate stays in sync between the renderer
-    /// and the annotation model.
+    /// a remote review summary, a local review-level comment, a comment on a
+    /// file no longer in the diff, or a visible review-level (line: None)
+    /// remote thread. Mirrors exactly what the section renders, so the
+    /// header gate stays in sync between the renderer and the annotation
+    /// model.
     pub fn has_review_section_content(&self) -> bool {
-        if !self.forge_review_summaries.is_empty() || !self.session.review_comments.is_empty() {
+        if !self.forge_review_summaries.is_empty()
+            || !self.session.review_comments.is_empty()
+            || !self.detached_comments().is_empty()
+        {
             return true;
         }
         let visibility = self.session.remote_comments_visibility;
@@ -59,6 +120,9 @@ impl App {
     fn comment_navigator_key(annotation: &AnnotatedLine) -> Option<CommentNavigatorKey> {
         match annotation {
             AnnotatedLine::ReviewComment { comment_idx } => Some(CommentNavigatorKey::Review {
+                comment_idx: *comment_idx,
+            }),
+            AnnotatedLine::DetachedComment { comment_idx } => Some(CommentNavigatorKey::Detached {
                 comment_idx: *comment_idx,
             }),
             AnnotatedLine::FileComment {
@@ -119,6 +183,29 @@ impl App {
                     side: None,
                     author: Some(comment.author.clone()),
                     reply: self.list_comment_replies && comment.reply_to.is_some(),
+                })
+            }
+            CommentNavigatorKey::Detached { comment_idx } => {
+                let detached = self.detached_comments();
+                let DetachedComment {
+                    path,
+                    line,
+                    comment,
+                    ..
+                } = detached.into_iter().nth(comment_idx)?;
+                if !self.lists_local_comment(comment) {
+                    return None;
+                }
+                Some(CommentNavigatorItem {
+                    key: CommentNavigatorKey::Detached { comment_idx },
+                    kind: CommentNavigatorKind::Local(comment.comment_type.clone()),
+                    target_annotation,
+                    path: Some(path.display().to_string()),
+                    line,
+                    side: line.map(|_| comment.side.unwrap_or_default()),
+                    author: Some(comment.author.clone()),
+                    reply: self.list_comment_replies
+                        && (comment.reply_to_thread.is_some() || comment.reply_to.is_some()),
                 })
             }
             CommentNavigatorKey::File {
@@ -763,7 +850,10 @@ impl App {
     /// edit/delete in tuicr to prevent the local state from drifting from
     /// what GitHub now stores.
     pub fn cursor_on_locked_comment(&self) -> bool {
-        let Some(location) = self.find_comment_at_cursor() else {
+        let Some(location) = self
+            .find_comment_at_cursor()
+            .or_else(|| self.detached_comment_at_cursor())
+        else {
             return false;
         };
         match location {
@@ -808,6 +898,30 @@ impl App {
             self.line_annotations.get(self.diff_state.cursor_line),
             Some(AnnotatedLine::RemoteThreadLine { .. })
         )
+    }
+
+    /// The stored location of the comment on a file no longer in the diff
+    /// under the cursor. Only deleting and yanking reach it: it has no diff
+    /// row to edit or answer it on.
+    fn detached_comment_at_cursor(&self) -> Option<CommentLocation> {
+        let Some(AnnotatedLine::DetachedComment { comment_idx }) =
+            self.line_annotations.get(self.diff_state.cursor_line)
+        else {
+            return None;
+        };
+        let detached = self.detached_comments();
+        let detached = detached.get(*comment_idx)?;
+        let path = detached.path.to_path_buf();
+        let index = detached.index;
+        Some(match detached.line {
+            None => CommentLocation::File { path, index },
+            Some(line) => CommentLocation::Line {
+                path,
+                line,
+                side: detached.comment.side.unwrap_or_default(),
+                index,
+            },
+        })
     }
 
     pub(in crate::app) fn find_comment_at_cursor(&self) -> Option<CommentLocation> {
@@ -871,7 +985,10 @@ impl App {
     /// Resolves through the same lookup `dd` and `i` use, so `Y` yanks
     /// exactly the comment the cursor is sitting on.
     pub fn comment_content_at_cursor(&self) -> Option<String> {
-        match self.find_comment_at_cursor()? {
+        match self
+            .find_comment_at_cursor()
+            .or_else(|| self.detached_comment_at_cursor())?
+        {
             CommentLocation::Review { index } => self
                 .session
                 .review_comments
@@ -978,7 +1095,10 @@ impl App {
     /// Delete the comment at the current cursor position, if any
     /// Returns true if a comment was deleted
     pub fn delete_comment_at_cursor(&mut self) -> bool {
-        let Some(location) = self.find_comment_at_cursor() else {
+        let Some(location) = self
+            .find_comment_at_cursor()
+            .or_else(|| self.detached_comment_at_cursor())
+        else {
             return false;
         };
         let removed_id = self.session.comment_at(&location).map(|c| c.id.clone());

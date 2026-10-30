@@ -1044,6 +1044,14 @@ impl App {
                 }
             }
         }
+        let mut last_path = None;
+        for detached in self.detached_comments() {
+            if last_path != Some(detached.path) {
+                last_path = Some(detached.path);
+                height += 1;
+            }
+            height += Self::comment_display_lines(detached.comment, self.diff_state.viewport_width);
+        }
         if self.input_mode == InputMode::Comment
             && self.comment_is_review_level
             && self.editing_comment_id.is_none()

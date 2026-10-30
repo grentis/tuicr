@@ -344,6 +344,16 @@ impl App {
                 let comment = self.session.review_comments.get(*comment_idx)?;
                 Some(Cow::Borrowed(comment.content.as_str()))
             }
+            AnnotatedLine::DetachedFileHeader { comment_idx } => {
+                let detached = self.detached_comments();
+                let path = detached.get(*comment_idx)?.path;
+                Some(Cow::Owned(path.display().to_string()))
+            }
+            AnnotatedLine::DetachedComment { comment_idx } => {
+                let detached = self.detached_comments();
+                let comment = detached.get(*comment_idx)?.comment;
+                Some(Cow::Owned(comment.content.clone()))
+            }
             AnnotatedLine::RemoteReviewSummaryLine { summary_idx } => {
                 let summary = self.forge_review_summaries.get(*summary_idx)?;
                 let author = summary.author.as_deref().unwrap_or("unknown");

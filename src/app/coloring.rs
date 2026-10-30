@@ -74,6 +74,8 @@ impl AnnotatedLine {
             | Self::IssueComment { .. }
             | Self::ReviewCommentsHeader
             | Self::ReviewComment { .. }
+            | Self::DetachedFileHeader { .. }
+            | Self::DetachedComment { .. }
             | Self::RemoteReviewSummaryLine { .. }
             | Self::FileHeader { .. }
             | Self::ReviewedBanner { .. }

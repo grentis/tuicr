@@ -140,6 +140,19 @@ impl App {
             }
         }
 
+        let viewport_width = self.diff_state.viewport_width;
+        let mut detached_rows = Vec::new();
+        let mut last_path = None;
+        for (comment_idx, detached) in self.detached_comments().iter().enumerate() {
+            if last_path != Some(detached.path) {
+                last_path = Some(detached.path);
+                detached_rows.push(AnnotatedLine::DetachedFileHeader { comment_idx });
+            }
+            let rows = Self::comment_display_lines(detached.comment, viewport_width);
+            detached_rows.extend((0..rows).map(|_| AnnotatedLine::DetachedComment { comment_idx }));
+        }
+        self.line_annotations.extend(detached_rows);
+
         if let Some(info) = &self.pr_info
             && !info.issue_comments.is_empty()
         {
