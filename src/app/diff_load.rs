@@ -1,28 +1,14 @@
 use super::*;
 
 impl App {
+    // The commit pane's rows for staged and unstaged changes, and the diff
+    // a selection over them means, are the library's (`crate::branch`).
     pub(in crate::app) fn staged_commit_entry() -> CommitInfo {
-        CommitInfo {
-            id: STAGED_SELECTION_ID.to_string(),
-            short_id: "STAGED".to_string(),
-            branch_name: None,
-            summary: "Staged changes".to_string(),
-            body: None,
-            author: String::new(),
-            time: Utc::now(),
-        }
+        crate::branch::staged_entry()
     }
 
     pub(in crate::app) fn unstaged_commit_entry() -> CommitInfo {
-        CommitInfo {
-            id: UNSTAGED_SELECTION_ID.to_string(),
-            short_id: "UNSTAGED".to_string(),
-            branch_name: None,
-            summary: "Unstaged changes".to_string(),
-            body: None,
-            author: String::new(),
-            time: Utc::now(),
-        }
+        crate::branch::unstaged_entry()
     }
 
     /// If we are viewing a single commit, insert a "Commit Message" DiffFile at index 0.
@@ -97,15 +83,15 @@ impl App {
     }
 
     pub(in crate::app) fn is_staged_commit(commit: &CommitInfo) -> bool {
-        commit.id == STAGED_SELECTION_ID
+        crate::branch::is_staged(commit)
     }
 
     pub(in crate::app) fn is_unstaged_commit(commit: &CommitInfo) -> bool {
-        commit.id == UNSTAGED_SELECTION_ID
+        crate::branch::is_unstaged(commit)
     }
 
     pub(in crate::app) fn is_special_commit(commit: &CommitInfo) -> bool {
-        Self::is_staged_commit(commit) || Self::is_unstaged_commit(commit)
+        crate::branch::is_special(commit)
     }
 
     pub(in crate::app) fn special_commit_count(&self) -> usize {
@@ -263,7 +249,7 @@ impl App {
     /// without paying the full-diff cost, we ask the backend for just the
     /// changed paths and filter them through the same ignore rules. Backends
     /// that don't expose a path probe fall back to parsing the full diff.
-    pub(in crate::app) fn get_change_status_with_ignore(
+    pub(crate) fn get_change_status_with_ignore(
         vcs: &dyn VcsBackend,
         repo_root: &Path,
         highlighter: &SyntaxHighlighter,
@@ -673,36 +659,14 @@ impl App {
         start: usize,
         end: usize,
     ) -> DiffSource {
-        let has_staged =
-            (start..=end).any(|i| review_commits.get(i).is_some_and(Self::is_staged_commit));
-        let has_unstaged =
-            (start..=end).any(|i| review_commits.get(i).is_some_and(Self::is_unstaged_commit));
-        let selected_ids: Vec<String> = (start..=end)
-            .rev() // oldest to newest, matching every other DiffSource commit list
-            .filter_map(|i| review_commits.get(i))
-            .filter(|c| !Self::is_special_commit(c))
-            .map(|c| c.id.clone())
-            .collect();
-
-        // Matched on the three facts that decide the answer, so every case is
-        // visible at once and the compiler rejects a missing one.
-        match (has_staged, has_unstaged, selected_ids.is_empty()) {
-            // No staged or unstaged entry in the selection, so it is only commits.
-            (false, false, _) => DiffSource::CommitRange(selected_ids),
-            // A special entry plus real commits.
-            (_, _, false) => DiffSource::StagedUnstagedAndCommits(selected_ids),
-            // Special entries only, no commits alongside them.
-            (true, true, true) => DiffSource::StagedAndUnstaged,
-            (true, false, true) => DiffSource::Staged,
-            (false, true, true) => DiffSource::Unstaged,
-        }
+        crate::branch::source_for_commit_subrange(review_commits, start, end)
     }
 
     /// Backend-agnostic core of `fetch_diff_files_with`: takes `vcs` and
     /// `root_path` as parameters instead of reading `self.vcs`/`self.vcs_info`
     /// so the diff-watch worker thread (`diff_watch_fetch`) can call it
     /// against a backend it opened itself, without borrowing `App`.
-    pub(in crate::app) fn fetch_diff_files_for_source(
+    pub(crate) fn fetch_diff_files_for_source(
         vcs: &dyn VcsBackend,
         root_path: &Path,
         diff_source: &DiffSource,
@@ -1484,40 +1448,7 @@ impl App {
         fetched: Vec<CommitInfo>,
         status: Option<VcsChangeStatus>,
     ) -> Vec<CommitInfo> {
-        let existing = current
-            .iter()
-            .take_while(|commit| Self::is_special_commit(commit));
-        let mut rows: Vec<CommitInfo> = match status {
-            None => existing.cloned().collect(),
-            Some(status) => {
-                let mut kept: Vec<CommitInfo> = existing
-                    .filter(|commit| Self::special_row_still_earned(commit, status))
-                    .cloned()
-                    .collect();
-                if status.staged && !kept.iter().any(Self::is_staged_commit) {
-                    kept.push(Self::staged_commit_entry());
-                }
-                if status.unstaged && !kept.iter().any(Self::is_unstaged_commit) {
-                    kept.push(Self::unstaged_commit_entry());
-                }
-                kept
-            }
-        };
-        rows.extend(fetched);
-        rows
-    }
-
-    /// Whether the tree still holds what a synthetic row stands for.
-    ///
-    /// A row this does not recognise is kept. `is_special_commit` decides what
-    /// counts as one, and reading "not staged" as "therefore unstaged" would
-    /// silently drop a third kind the day one is added.
-    fn special_row_still_earned(commit: &CommitInfo, status: VcsChangeStatus) -> bool {
-        match commit {
-            row if Self::is_staged_commit(row) => status.staged,
-            row if Self::is_unstaged_commit(row) => status.unstaged,
-            _ => true,
-        }
+        crate::branch::commit_pane_rows(current, fetched, status)
     }
 }
 

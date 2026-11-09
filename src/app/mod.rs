@@ -1068,7 +1068,7 @@ pub struct ViewedSyncWorker {
     pub tx: std::sync::mpsc::Sender<ViewedSyncRequest>,
 }
 
-pub use branch::default_branch_base;
+pub use crate::branch::default_branch_base;
 pub use comments::DetachedComment;
 pub use commit_dialog::{CommitDraft, CommitEvent, CommitField};
 pub use git_actions::{DiscardRequest, GitFileState};
