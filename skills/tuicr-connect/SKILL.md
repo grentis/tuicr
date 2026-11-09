@@ -91,10 +91,12 @@ When the background `tuicr review wait` completes:
   `:submit`. **First start the wait again**, in the background, the same
   way, so a `:submit` made while you work is not lost. Then process the
   comments below straight away; do not ask whether to.
-- **It failed**: report its error in one line and do not restart it. "was
-  closed" means the user quit tuicr; "another agent is waiting" means
-  someone else took the session over; "no running tuicr" means it was not
-  open. The user runs `/tuicr-connect` again to reconnect.
+- **It failed**: do not restart it. When the review was closed ("was
+  closed": the user quit tuicr, or the program hosting the review closed
+  it; "no running tuicr": it is not open any more), say nothing at all:
+  the user closed it and knows; they connect again with `/tuicr-connect`
+  when they want to. Any other error ("another agent is waiting": someone
+  else took the session over) in one line.
 
 A `/tuicr-connect comments <session>` message (tuicr's typed fallback, used
 when no wait is running) means the same: process the comments. If
@@ -178,6 +180,12 @@ Done, 3 threads answered:
 - `src/main.rs` handle the error: already handled by `run()`, no change
 - `review` aa: unclear, asked what should change
 ```
+
+The recap is that list and nothing else. A question, an offer ("if you
+want, I'll…") or a choice for the user belongs in your reply in the thread,
+where they answer it: do not repeat it after the list, and do not end with
+one. Do not mention the wait either: it is running again (you restarted it
+first), the user knows it, and saying so is noise.
 
 Then tell tuicr, with the same summary:
 
