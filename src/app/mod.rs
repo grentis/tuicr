@@ -1073,6 +1073,8 @@ pub use comments::DetachedComment;
 pub use commit_dialog::{CommitDraft, CommitEvent, CommitField};
 pub use git_actions::{DiscardRequest, GitFileState};
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
+// The comment-visibility check is the library's, for every app module.
+pub(in crate::app) use crate::model::commit_selection::comment_visible_with;
 pub use thread_reply::ThreadReplyTarget;
 
 /// A pull request opened through [`crate::forge::pr_open`] with the review

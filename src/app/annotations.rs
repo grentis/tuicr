@@ -207,7 +207,7 @@ impl App {
             // File comments
             if let Some(review) = self.session.files.get(path) {
                 for (comment_idx, comment) in review.file_comments.iter().enumerate() {
-                    if !Self::comment_visible_with(comment, commit_set.as_ref()) {
+                    if !comment_visible_with(comment, commit_set.as_ref()) {
                         continue;
                     }
                     let comment_lines =
@@ -444,7 +444,7 @@ impl App {
 
             // Hide comments scoped to a commit outside the current selection.
             // Uses the shared predicate so height math and rendering agree.
-            if !Self::comment_visible_with(comment, commit_set) {
+            if !comment_visible_with(comment, commit_set) {
                 continue;
             }
 
