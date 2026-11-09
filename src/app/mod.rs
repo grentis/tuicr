@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use ratatui::style::Color;
@@ -1156,34 +1156,7 @@ pub struct Message {
 const MESSAGE_TTL_INFO: Duration = Duration::from_secs(3);
 const MESSAGE_TTL_WARNING: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SessionFileState {
-    modified: Option<SystemTime>,
-    len: u64,
-}
-
-impl SessionFileState {
-    fn from_path(path: &Path) -> Result<Self> {
-        let metadata = std::fs::metadata(path)?;
-        Ok(Self {
-            modified: metadata.modified().ok(),
-            len: metadata.len(),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct StoredComment {
-    location: StoredCommentLocation,
-    comment: Comment,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum StoredCommentLocation {
-    Review,
-    File { path: PathBuf },
-    Line { path: PathBuf, line: u32 },
-}
+pub(crate) use crate::session_sync::SessionFileState;
 
 /// Pending "press again to confirm" state for the vim comment box. A first
 /// plain `Enter`/`Esc` in Normal mode arms `Save`/`Cancel` and shows a header

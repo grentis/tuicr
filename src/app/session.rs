@@ -1,4 +1,5 @@
 use super::*;
+use crate::session_sync::SessionMerge;
 
 impl App {
     /// Slug for the currently active session, derived from the session's
@@ -154,18 +155,8 @@ impl App {
     }
 
     pub fn save_current_session_merging_external(&mut self) -> Result<PathBuf> {
-        let identity = self.session.clone();
-        let current = self.session.clone();
-        let base = self.persisted_session_snapshot.clone();
-        let (path, saved, _changed) =
-            crate::persistence::storage::save_session_by_identity(&identity, |persisted| {
-                let mut merged = current.clone();
-                if let Some(latest) = persisted.as_ref() {
-                    Self::merge_external_session_changes(&mut merged, &base, latest);
-                }
-                merged.updated_at = Utc::now();
-                Ok((merged, ()))
-            })?;
+        let (path, saved) =
+            crate::session_sync::save_out(&self.session, &self.persisted_session_snapshot)?;
         self.mark_session_saved(path.clone(), saved)?;
         self.mark_current_session_active_at(&path);
         self.rebuild_annotations();
@@ -185,7 +176,7 @@ impl App {
                 saved.updated_at = Utc::now();
                 Ok((saved, ()))
             })?;
-        Self::merge_external_session_changes(&mut self.session, &base, &saved);
+        crate::session_sync::merge_external_session_changes(&mut self.session, &base, &saved);
         let state = SessionFileState::from_path(&path).ok();
         self.observe_persisted_session(Some(path.clone()), state, || Ok(saved))?;
         self.mark_current_session_active_at(&path);
@@ -244,222 +235,22 @@ impl App {
         Ok(self.reload_persisted_session(force)?.added)
     }
 
-    fn reload_persisted_session(&mut self, force: bool) -> Result<PersistedReload> {
+    fn reload_persisted_session(&mut self, force: bool) -> Result<SessionMerge> {
         let path = match self.session_path_or_resolve() {
             Ok(path) => path,
-            Err(_) => return Ok(PersistedReload::default()),
+            Err(_) => return Ok(SessionMerge::default()),
         };
-
-        if !path.exists() {
-            self.session_file_state = None;
-            return Ok(PersistedReload::default());
-        }
-
-        let state = SessionFileState::from_path(&path)?;
-        if !force && self.session_file_state == Some(state) {
-            return Ok(PersistedReload::default());
-        }
-
-        let latest = crate::persistence::storage::load_session(&path)?;
-        let before_count = Self::comment_count(&self.session);
-        let changed = Self::merge_external_session_changes(
+        let merge = crate::session_sync::merge_in(
             &mut self.session,
-            &self.persisted_session_snapshot,
-            &latest,
-        );
-        self.observe_persisted_session(Some(path), Some(state), || Ok(latest))?;
-        if changed > 0 {
+            &mut self.persisted_session_snapshot,
+            &path,
+            &mut self.session_file_state,
+            force,
+        )?;
+        if merge.changed > 0 {
             self.rebuild_annotations();
         }
-        let after_count = Self::comment_count(&self.session);
-        Ok(PersistedReload {
-            added: after_count.saturating_sub(before_count),
-            changed,
-        })
-    }
-
-    pub(in crate::app) fn merge_external_session_changes(
-        current: &mut ReviewSession,
-        base: &ReviewSession,
-        latest: &ReviewSession,
-    ) -> usize {
-        let mut changed = 0;
-
-        for (path, latest_review) in &latest.files {
-            if !current.files.contains_key(path) {
-                current.files.insert(path.clone(), latest_review.clone());
-                changed += latest_review.comment_count();
-                continue;
-            }
-
-            let base_reviewed = base.files.get(path).map(|review| review.reviewed);
-            if let Some(current_review) = current.files.get_mut(path)
-                && Some(current_review.reviewed) == base_reviewed
-                && current_review.reviewed != latest_review.reviewed
-            {
-                current_review.reviewed = latest_review.reviewed;
-                changed += 1;
-            }
-        }
-
-        let base_comments = Self::collect_stored_comments(base);
-        let current_comments = Self::collect_stored_comments(current);
-        let latest_comments = Self::collect_stored_comments(latest);
-
-        for (id, latest_comment) in &latest_comments {
-            match base_comments.get(id) {
-                None => {
-                    if !current_comments.contains_key(id) {
-                        Self::upsert_stored_comment(current, latest_comment.clone());
-                        changed += 1;
-                    }
-                }
-                Some(base_comment) if latest_comment != base_comment => {
-                    match current_comments.get(id) {
-                        Some(current_comment) if current_comment == base_comment => {
-                            Self::upsert_stored_comment(current, latest_comment.clone());
-                            changed += 1;
-                        }
-                        None => {
-                            // Local deletion wins over an external edit.
-                        }
-                        Some(_) => {
-                            // Local edit wins over an external edit of the same comment.
-                        }
-                    }
-                }
-                Some(_) => {}
-            }
-        }
-
-        for (id, base_comment) in &base_comments {
-            if !latest_comments.contains_key(id)
-                && current_comments
-                    .get(id)
-                    .is_some_and(|current_comment| current_comment == base_comment)
-                && Self::remove_stored_comment(current, id)
-            {
-                changed += 1;
-            }
-        }
-
-        changed
-    }
-
-    fn comment_count(session: &ReviewSession) -> usize {
-        session.review_comments.len()
-            + session
-                .files
-                .values()
-                .map(|review| review.comment_count())
-                .sum::<usize>()
-    }
-
-    fn collect_stored_comments(session: &ReviewSession) -> HashMap<String, StoredComment> {
-        let mut comments = HashMap::new();
-        for comment in &session.review_comments {
-            comments.insert(
-                comment.id.clone(),
-                StoredComment {
-                    location: StoredCommentLocation::Review,
-                    comment: comment.clone(),
-                },
-            );
-        }
-
-        for (path, review) in &session.files {
-            for comment in &review.file_comments {
-                comments.insert(
-                    comment.id.clone(),
-                    StoredComment {
-                        location: StoredCommentLocation::File { path: path.clone() },
-                        comment: comment.clone(),
-                    },
-                );
-            }
-
-            for (line, line_comments) in &review.line_comments {
-                for comment in line_comments {
-                    comments.insert(
-                        comment.id.clone(),
-                        StoredComment {
-                            location: StoredCommentLocation::Line {
-                                path: path.clone(),
-                                line: *line,
-                            },
-                            comment: comment.clone(),
-                        },
-                    );
-                }
-            }
-        }
-
-        comments
-    }
-
-    fn upsert_stored_comment(session: &mut ReviewSession, stored: StoredComment) {
-        Self::remove_stored_comment(session, &stored.comment.id);
-        match stored.location {
-            StoredCommentLocation::Review => {
-                session.review_comments.push(stored.comment);
-                session.order_threads();
-            }
-            StoredCommentLocation::File { path } => {
-                if let Some(review) = session.files.get_mut(&path) {
-                    review.file_comments.push(stored.comment);
-                    review.order_threads();
-                }
-            }
-            StoredCommentLocation::Line { path, line } => {
-                if let Some(review) = session.files.get_mut(&path) {
-                    review
-                        .line_comments
-                        .entry(line)
-                        .or_default()
-                        .push(stored.comment);
-                    review.order_threads();
-                }
-            }
-        }
-    }
-
-    fn remove_stored_comment(session: &mut ReviewSession, id: &str) -> bool {
-        if let Some(index) = session
-            .review_comments
-            .iter()
-            .position(|comment| comment.id == id)
-        {
-            session.review_comments.remove(index);
-            return true;
-        }
-
-        for review in session.files.values_mut() {
-            if let Some(index) = review
-                .file_comments
-                .iter()
-                .position(|comment| comment.id == id)
-            {
-                review.file_comments.remove(index);
-                return true;
-            }
-
-            let mut removed_from_line = None;
-            for (line, comments) in &mut review.line_comments {
-                if let Some(index) = comments.iter().position(|comment| comment.id == id) {
-                    comments.remove(index);
-                    removed_from_line = Some((*line, comments.is_empty()));
-                    break;
-                }
-            }
-            if let Some((line, emptied)) = removed_from_line {
-                if emptied {
-                    review.line_comments.remove(&line);
-                }
-                return true;
-            }
-        }
-
-        false
+        Ok(merge)
     }
 
     /// Load or create a session for a commit range (used by revisions and commit selection).
@@ -760,14 +551,4 @@ impl App {
             })
             .collect()
     }
-}
-
-/// What [`App::reload_persisted_session`] merged from disk.
-#[derive(Debug, Default, Clone, Copy)]
-struct PersistedReload {
-    /// Comments added by another writer.
-    added: usize,
-    /// Every merged change, including external deletions and edits, which
-    /// need a redraw even though they add nothing.
-    changed: usize,
 }
