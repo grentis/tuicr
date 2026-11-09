@@ -12,7 +12,7 @@ use crate::input::Action;
 fn commenting_app() -> App {
     let mut app = build_pr_app();
     app.forge_config.extended_comments = true;
-    app.mention_lookup.in_flight = Some("blocked".to_string());
+    app.mention_lookup.tracker.in_flight = Some("blocked".to_string());
     app.enter_review_comment_mode();
     app
 }
@@ -28,8 +28,7 @@ fn press(app: &mut App, code: KeyCode) -> bool {
 }
 
 fn listed(app: &App) -> Vec<String> {
-    app.mention
-        .as_ref()
+    app.mention()
         .map(|state| state.candidates.iter().map(|c| c.login.clone()).collect())
         .unwrap_or_default()
 }
@@ -41,7 +40,7 @@ fn should_list_participants_with_the_author_first_and_highlighted() {
     type_text(&mut app, "@");
 
     assert_eq!(listed(&app), ["alice", "bob", "carol", "dave"]);
-    assert_eq!(app.mention.as_ref().map(|state| state.selected), Some(0));
+    assert_eq!(app.mention().map(|state| state.selected), Some(0));
 }
 
 #[test]
@@ -64,7 +63,7 @@ fn should_insert_the_author_on_enter() {
     assert_eq!(app.comment_buffer, "thanks @alice ");
     assert_eq!(app.comment_cursor, app.comment_buffer.len());
     assert_eq!(app.input_mode, InputMode::Comment);
-    assert!(app.mention.is_none());
+    assert!(app.mention().is_none());
 }
 
 #[test]
@@ -82,7 +81,7 @@ fn should_insert_the_highlighted_login_on_tab() {
 #[test]
 fn should_add_forge_matches_after_participants_as_the_name_is_typed() {
     let mut app = commenting_app();
-    app.mention_lookup.results.insert(
+    app.mention_lookup.tracker.results.insert(
         "ca".to_string(),
         vec![
             MentionCandidate {
@@ -110,11 +109,11 @@ fn should_keep_the_list_closed_after_esc_until_a_new_mention() {
     type_text(&mut app, "@");
 
     assert!(press(&mut app, KeyCode::Esc));
-    assert!(app.mention.is_none());
+    assert!(app.mention().is_none());
     assert_eq!(app.input_mode, InputMode::Comment);
 
     type_text(&mut app, "b");
-    assert!(app.mention.is_none());
+    assert!(app.mention().is_none());
 
     type_text(&mut app, " @");
     assert_eq!(listed(&app), ["alice", "bob", "carol", "dave"]);
@@ -135,7 +134,7 @@ fn should_not_suggest_in_a_local_review() {
 
     type_text(&mut app, "@");
 
-    assert!(app.mention.is_none());
+    assert!(app.mention().is_none());
 }
 
 #[test]
@@ -145,7 +144,7 @@ fn should_not_suggest_with_extended_comments_off() {
 
     type_text(&mut app, "@");
 
-    assert!(app.mention.is_none());
+    assert!(app.mention().is_none());
 }
 
 #[test]
@@ -154,7 +153,7 @@ fn should_not_open_on_an_email_address() {
 
     type_text(&mut app, "mail bob@");
 
-    assert!(app.mention.is_none());
+    assert!(app.mention().is_none());
 }
 
 #[test]

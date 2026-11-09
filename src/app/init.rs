@@ -587,7 +587,6 @@ impl App {
             pr_threads_rx: None,
             viewed_sync: None,
             viewed_sync_rx: None,
-            mention: None,
             mention_lookup: MentionLookup::default(),
             pr_comment_rx: None,
             pr_comment_unsent: None,
