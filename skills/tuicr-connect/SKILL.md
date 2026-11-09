@@ -1,6 +1,6 @@
 ---
 name: tuicr-connect
-description: Connect to the tuicr reviewing this checkout's branch, opening one if none runs (in a split of the agent's pane, a new herdr tab, or a terminal window), and wait in the background for the user's `:submit`; then work through the review comments waiting on you and answer each in its thread. Use when the user types /tuicr-connect, when the background `tuicr review wait` finishes, or when a "/tuicr-connect comments" message arrives. (Upstream's /tuicr skill, which opens tuicr on a diff and reads its comments when it closes, is a separate skill.)
+description: Connect to the tuicr reviewing this checkout's branch, opening one if none runs (in a split of the agent's pane, a new herdr tab, or a terminal window), and wait in the background for the user's `:submit`; then work through the review comments waiting on you and answer each in its thread. Use when the user types /tuicr-connect, when a program hosting the review sends "/tuicr-connect --from ext", when the background `tuicr review wait` finishes, or when a "/tuicr-connect comments" message arrives. (Upstream's /tuicr skill, which opens tuicr on a diff and reads its comments when it closes, is a separate skill.)
 ---
 
 # tuicr connection
@@ -23,7 +23,7 @@ tuicr tells your messages from everyone else's.
 Run the launcher from the checkout being worked on:
 
 ```bash
-~/.claude/skills/tuicr-connect/tuicr-connect.sh [--in split|tab|window] /path/to/checkout
+~/.claude/skills/tuicr-connect/tuicr-connect.sh [--in split|tab|window] [--from ext] /path/to/checkout
 ```
 
 It reuses the tuicr already reviewing the checkout's branch, wherever it
@@ -55,7 +55,19 @@ that started it. It returns at once with JSON:
 `--in` said).
 Remember `session` and `repo` for the rest of the conversation. Check that
 `agent` starts with the workspace the user is in (`herdr workspace list`
-shows the focused one); if it does not, say so instead of carrying on.
+shows the focused one); if it does not, say so instead of carrying on. Not
+with `--from ext` (below).
+
+### `/tuicr-connect --from ext` — sent by the program hosting the review
+
+The user did not type it: a program that hosts the review for them (one
+that shows this agent and its review side by side) sent it, after
+registering the review the way a running tuicr does. The user is looking at
+that program, not at herdr, so the focused workspace says nothing about
+this pane: skip that check. Pass `--from ext` to the launcher: it connects
+to that review and never opens one (none open is an error: report it in one
+line and stop). Then start the wait as below, without asking anything, and
+say in one line that you connected.
 
 Then start the wait, **in the background** (the Bash tool's
 `run_in_background`), so it never blocks you:

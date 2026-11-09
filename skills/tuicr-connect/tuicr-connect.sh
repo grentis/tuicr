@@ -14,8 +14,12 @@
 # TUICR_AGENT. Prints the session as
 # JSON and returns at once: nothing here waits on the review.
 #
-# Usage: tuicr-connect.sh [--in split|tab|window] [checkout]
-#        (default: a split, for the current directory)
+# `--from ext`: a program hosting the review sent /tuicr-connect, not
+# the user, and it registered the review first: connect to it, never open
+# one; none running is an error.
+#
+# Usage: tuicr-connect.sh [--in split|tab|window] [--from user|ext] [checkout]
+#        (default: a split, from the user, for the current directory)
 #
 # TUICR_LAUNCH_COMMAND  what to start when nothing is running (default: tuicr -b)
 # TUICR_CONNECT_TIMEOUT seconds to wait for it to come up (default: 60)
@@ -24,10 +28,13 @@
 set -euo pipefail
 
 where=${TUICR_CONNECT_IN:-split}
+from=user
 while (($#)); do
   case $1 in
     --in) where=${2:-}; shift 2 || shift ;;
     --in=*) where=${1#--in=}; shift ;;
+    --from) from=${2:-}; shift 2 || shift ;;
+    --from=*) from=${1#--from=}; shift ;;
     *) break ;;
   esac
 done
@@ -43,6 +50,10 @@ die() {
 case $where in
   tab | split | window) ;;
   *) die "--in takes split, tab or window, not '$where'" ;;
+esac
+case $from in
+  user | ext) ;;
+  *) die "--from takes user or ext, not '$from'" ;;
 esac
 [[ ${HERDR_ENV:-} == 1 ]] || die "not running inside a herdr pane"
 root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || die "$dir is not a git checkout"
@@ -103,6 +114,8 @@ fi
 if ((${#found[@]} == 1)); then
   read -r session _ <<<"${found[0]}"
   how=connected
+elif [[ $from == ext ]]; then
+  die "no review of $branch is open: the program that sent --from ext opens one first"
 else
   case $where in
     tab)
