@@ -22,10 +22,7 @@ impl App {
         event: crate::forge::submit::SubmitEvent,
         skip_confirm: bool,
     ) {
-        use crate::forge::submit::{
-            CommentAnchor, InlineComment, ResolverAction, SubmitContext, ThreadReply,
-            UnmappableItem, map_comment,
-        };
+        use crate::forge::submit::{ResolverAction, SubmitContext, SubmitRefusal, plan_submit};
 
         let DiffSource::PullRequest(pr) = &self.diff_source else {
             self.set_warning(":submit only applies in PR mode");
@@ -64,99 +61,44 @@ impl App {
 
         let submit_ctx = SubmitContext::new(&self.forge_config, &self.comment_types);
 
-        let mut mappable: Vec<InlineComment> = Vec::new();
-        let mut unmappable: Vec<UnmappableItem> = Vec::new();
-        let mut replies: Vec<ThreadReply> = Vec::new();
-        let mut total_local_drafts = 0_usize;
-
-        // Walk file-level and line comments in display order. Review-level
-        // comments (session.review_comments) are NOT inline-mapped; they
-        // appear in the body via `build_review_body`.
-        for file in &files {
-            let Some(review) = self.session.files.get(file.display_path()) else {
-                continue;
-            };
-            for comment in &review.file_comments {
-                if comment.is_locked() || !self.comment_visible(comment) {
-                    continue;
-                }
-                total_local_drafts += 1;
-                // A reply answers its thread; it is not placed in the diff.
-                if let Some(reply) = ThreadReply::from_comment(comment, submit_ctx) {
-                    replies.push(reply);
-                    continue;
-                }
-                bucket_mapping(
-                    map_comment(comment, CommentAnchor::FileLevel, file, submit_ctx),
-                    &mut mappable,
-                    &mut unmappable,
-                );
-            }
-            let mut keys: Vec<&u32> = review.line_comments.keys().collect();
-            keys.sort();
-            for key in keys {
-                for comment in &review.line_comments[key] {
-                    if comment.is_locked() || !self.comment_visible(comment) {
-                        continue;
-                    }
-                    total_local_drafts += 1;
-                    if let Some(reply) = ThreadReply::from_comment(comment, submit_ctx) {
-                        replies.push(reply);
-                        continue;
-                    }
-                    let anchor = if comment.line_range.is_some() {
-                        CommentAnchor::Range
-                    } else {
-                        CommentAnchor::Line {
-                            line: *key,
-                            side: comment.side.unwrap_or_default(),
-                        }
-                    };
-                    bucket_mapping(
-                        map_comment(comment, anchor, file, submit_ctx),
-                        &mut mappable,
-                        &mut unmappable,
-                    );
-                }
-            }
+        if event == crate::forge::submit::SubmitEvent::Replies
+            && !self.forge_config.extended_comments
+        {
+            self.set_warning(":submit replies needs [forge] extended_comments");
+            return;
         }
-
-        // Replies only: the other drafts stay local, with no review to hold
-        // or summarize them.
-        if event == crate::forge::submit::SubmitEvent::Replies {
-            if !self.forge_config.extended_comments {
-                self.set_warning(":submit replies needs [forge] extended_comments");
-                return;
-            }
-            if replies.is_empty() {
+        // The walk over the drafts, the mapping and the refusals are the
+        // library's (`plan_submit`), shared with programs that use tuicr.
+        let plan = match plan_submit(
+            &self.session,
+            &files,
+            event,
+            commit_id,
+            submit_ctx,
+            |comment| self.comment_visible(comment),
+        ) {
+            Ok(plan) => plan,
+            Err(SubmitRefusal::NoReplies) => {
                 self.set_warning("No replies to send \u{00b7} c on a thread drafts one");
                 return;
             }
-            mappable.clear();
-            unmappable.clear();
-        }
+            Err(SubmitRefusal::NothingToSubmit) => {
+                self.set_warning("Nothing to submit — no local-draft comments");
+                return;
+            }
+        };
 
-        // Approve is the one event that's meaningful with no comments — a
-        // bare "LGTM" approval. Every other event needs at least one local
-        // draft comment or a review-level comment, otherwise there's
-        // nothing to submit.
-        let bare_allowed = matches!(event, crate::forge::submit::SubmitEvent::Approve);
-        if !bare_allowed && total_local_drafts == 0 && self.session.review_comments.is_empty() {
-            self.set_warning("Nothing to submit — no local-draft comments");
-            return;
-        }
-
-        let resolver_choices = vec![ResolverAction::default(); unmappable.len()];
-        let has_unmappable = !unmappable.is_empty();
+        let resolver_choices = vec![ResolverAction::default(); plan.unmappable.len()];
+        let has_unmappable = !plan.unmappable.is_empty();
         self.submit_state = Some(SubmitState {
             event,
-            mappable,
-            unmappable,
+            mappable: plan.mappable,
+            unmappable: plan.unmappable,
             resolver_choices,
             resolver_cursor: 0,
-            commit_id,
+            commit_id: plan.commit_id,
             skip_confirm,
-            replies,
+            replies: plan.replies,
         });
 
         if has_unmappable {
@@ -320,9 +262,7 @@ impl App {
     /// network round-trip on a background thread. The result is applied
     /// later in `poll_pr_submit_events`.
     pub fn spawn_pr_submit(&mut self) -> Result<()> {
-        use crate::forge::submit::{
-            MovedToSummaryItem, ResolverAction, SubmitContext, build_review_body,
-        };
+        use crate::forge::submit::{SubmitBody, SubmitContext, submit_body};
         use crate::forge::traits::{CreateReviewRequest, PullRequestTarget};
 
         // Snapshot identity from the PR diff source first so the borrow on
@@ -344,34 +284,20 @@ impl App {
             return Ok(());
         }
 
-        let summary_items: Vec<MovedToSummaryItem> = state
-            .unmappable
-            .iter()
-            .zip(state.resolver_choices.iter())
-            .filter_map(|(item, action)| {
-                if *action == ResolverAction::MoveToSummary {
-                    Some(MovedToSummaryItem {
-                        comment: item.comment.clone(),
-                        file: item.file.clone(),
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let summary_comment_ids: Vec<String> =
-            summary_items.iter().map(|i| i.comment.id.clone()).collect();
-        let review_comment_ids: Vec<String> = self
-            .session
-            .review_comments
-            .iter()
-            .map(|c| c.id.clone())
-            .collect();
-        let body = build_review_body(
-            &self.session.review_comments,
-            &summary_items,
+        // The body and the comments it carries are the library's
+        // (`submit_body`): the review comments not sent yet, and the
+        // unplaced comments moved into it.
+        let SubmitBody {
+            body,
+            summary_ids: summary_comment_ids,
+            review_ids: review_comment_ids,
+        } = submit_body(
+            &self.session,
+            &state.unmappable,
+            &state.resolver_choices,
             SubmitContext::new(&self.forge_config, &self.comment_types),
         );
+        let moved_to_summary = summary_comment_ids.len();
 
         // Save the session BEFORE the network call — keeps the user's
         // local-draft work durable if anything goes sideways below.
@@ -383,7 +309,7 @@ impl App {
             replies: state.replies.clone(),
             summary_comment_ids,
             review_comment_ids,
-            moved_to_summary_count: summary_items.len(),
+            moved_to_summary_count: moved_to_summary,
             head_sha_snapshot: state.commit_id.clone(),
             repository: pr.key.repository.clone(),
             pr_number: pr.key.number,
@@ -498,18 +424,11 @@ impl App {
                 pr_number,
                 pr_number.to_string(),
             );
-            let mut sent = Vec::new();
-            let error = match backend.get_pull_request(target) {
-                Ok(details) => replies.iter().find_map(|reply| {
-                    match backend.reply_to_thread(&details, reply) {
-                        Ok(()) => {
-                            sent.push(reply.comment_id.clone());
-                            None
-                        }
-                        Err(e) => Some(e.to_string()),
-                    }
-                }),
-                Err(e) => Some(e.to_string()),
+            // The loop is the library's (`forge::submit::send_replies`),
+            // shared with programs that use tuicr.
+            let (sent, error) = match backend.get_pull_request(target) {
+                Ok(details) => crate::forge::submit::send_replies(&*backend, &details, &replies),
+                Err(e) => (Vec::new(), Some(e.to_string())),
             };
             let _ = tx.send(PrSubmitEvent::RepliesDone {
                 repository,
@@ -700,13 +619,8 @@ impl App {
         in_flight: &SubmitInFlightState,
         response: &crate::forge::traits::GhCreateReviewResponse,
     ) {
-        use crate::forge::submit::SubmitEvent;
-        use crate::model::comment::CommentLifecycleState;
-
-        let new_state = match in_flight.event {
-            SubmitEvent::Draft => CommentLifecycleState::PushedDraft,
-            _ => CommentLifecycleState::Submitted,
-        };
+        // What a sent comment becomes is the library's (`sent_state`).
+        let new_state = crate::forge::submit::sent_state(in_flight.event);
         let review_id = response.id.to_string();
 
         let target_ids: std::collections::HashSet<&str> = in_flight
@@ -731,17 +645,7 @@ impl App {
         new_state: crate::model::comment::CommentLifecycleState,
         review_id: Option<String>,
     ) {
-        let mark = |comment: &mut crate::model::comment::Comment| {
-            if ids.contains(comment.id.as_str()) {
-                comment.lifecycle_state = new_state;
-                comment.remote_review_id = review_id.clone();
-            }
-        };
-        self.session.review_comments.iter_mut().for_each(mark);
-        for review in self.session.files.values_mut() {
-            review.file_comments.iter_mut().for_each(mark);
-            review.line_comments.values_mut().flatten().for_each(mark);
-        }
+        self.session.mark_comments_sent(ids, new_state, review_id);
         self.rebuild_annotations();
     }
 
@@ -750,13 +654,6 @@ impl App {
     /// was published to the forge is now represented by the fresh remote
     /// threads, so keeping the locals would double-render every line.
     pub fn prune_locked_comments(&mut self) {
-        self.session.review_comments.retain(|c| !c.is_locked());
-        for review in self.session.files.values_mut() {
-            review.file_comments.retain(|c| !c.is_locked());
-            for comments in review.line_comments.values_mut() {
-                comments.retain(|c| !c.is_locked());
-            }
-            review.line_comments.retain(|_, v| !v.is_empty());
-        }
+        self.session.prune_locked_comments();
     }
 }

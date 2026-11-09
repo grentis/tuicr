@@ -642,12 +642,326 @@ pub fn build_review_body(
     sections.join("\n\n")
 }
 
+/// What a submit sends, prepared from the review's drafts against the diff
+/// shown: the comments placed on it, those that could not be, and the
+/// replies to existing threads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmitPlan {
+    pub event: SubmitEvent,
+    /// The commit the comments are anchored to: `commit_id` in the payload.
+    pub commit_id: String,
+    pub mappable: Vec<InlineComment>,
+    pub unmappable: Vec<UnmappableItem>,
+    pub replies: Vec<ThreadReply>,
+}
+
+/// Why there is nothing to submit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubmitRefusal {
+    /// No draft and no review comment not sent yet, and the event needs
+    /// some (only an approval goes out bare).
+    NothingToSubmit,
+    /// Replies only, and there are none.
+    NoReplies,
+}
+
+/// Prepare a submit: walk every draft not sent yet that `visible` shows, in
+/// the order of `files` (the diff shown), each file's comments before its
+/// lines' and the lines in order; a reply to a thread goes as a reply, every
+/// other draft is mapped onto the diff (`map_comment`). Review comments are
+/// not mapped: they go in the body (`submit_body`).
+///
+/// Public for programs that use tuicr as a library, so their submit is
+/// tuicr's.
+pub fn plan_submit(
+    session: &crate::model::ReviewSession,
+    files: &[&DiffFile],
+    event: SubmitEvent,
+    commit_id: String,
+    ctx: SubmitContext<'_>,
+    visible: impl Fn(&Comment) -> bool,
+) -> Result<SubmitPlan, SubmitRefusal> {
+    let mut mappable: Vec<InlineComment> = Vec::new();
+    let mut unmappable: Vec<UnmappableItem> = Vec::new();
+    let mut replies: Vec<ThreadReply> = Vec::new();
+    let mut drafts = 0_usize;
+    let mut place = |mapped: MappedComment| match mapped {
+        MappedComment::Inline(inline) => mappable.push(inline),
+        MappedComment::Unmappable {
+            comment,
+            file,
+            reason,
+        } => unmappable.push(UnmappableItem {
+            comment,
+            file,
+            reason,
+        }),
+    };
+    for file in files {
+        let Some(review) = session.files.get(file.display_path()) else {
+            continue;
+        };
+        for comment in &review.file_comments {
+            if comment.is_locked() || !visible(comment) {
+                continue;
+            }
+            drafts += 1;
+            // A reply answers its thread; it is not placed in the diff.
+            if let Some(reply) = ThreadReply::from_comment(comment, ctx) {
+                replies.push(reply);
+                continue;
+            }
+            place(map_comment(comment, CommentAnchor::FileLevel, file, ctx));
+        }
+        let mut keys: Vec<&u32> = review.line_comments.keys().collect();
+        keys.sort();
+        for key in keys {
+            for comment in &review.line_comments[key] {
+                if comment.is_locked() || !visible(comment) {
+                    continue;
+                }
+                drafts += 1;
+                if let Some(reply) = ThreadReply::from_comment(comment, ctx) {
+                    replies.push(reply);
+                    continue;
+                }
+                let anchor = if comment.line_range.is_some() {
+                    CommentAnchor::Range
+                } else {
+                    CommentAnchor::Line {
+                        line: *key,
+                        side: comment.side.unwrap_or_default(),
+                    }
+                };
+                place(map_comment(comment, anchor, file, ctx));
+            }
+        }
+    }
+    // Replies only: the other drafts stay local, with no review to hold or
+    // summarize them.
+    if event == SubmitEvent::Replies {
+        if replies.is_empty() {
+            return Err(SubmitRefusal::NoReplies);
+        }
+        mappable.clear();
+        unmappable.clear();
+    }
+    // Approve is the one event meaningful with nothing: a bare approval.
+    let review_comments = session.review_comments.iter().any(|c| !c.is_locked());
+    if event != SubmitEvent::Approve && drafts == 0 && !review_comments {
+        return Err(SubmitRefusal::NothingToSubmit);
+    }
+    Ok(SubmitPlan {
+        event,
+        commit_id,
+        mappable,
+        unmappable,
+        replies,
+    })
+}
+
+/// A submit's review body, and the comments it carries: the review
+/// comments not sent yet, then the unplaced comments the resolver moved
+/// into it (`choices`, one per `unmappable`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmitBody {
+    pub body: String,
+    /// The unplaced comments moved into the body.
+    pub summary_ids: Vec<String>,
+    /// The review comments in it.
+    pub review_ids: Vec<String>,
+}
+
+/// Build a submit's body: the review comments not sent yet (those sent
+/// already are on the forge), and the unplaced comments moved into it.
+pub fn submit_body(
+    session: &crate::model::ReviewSession,
+    unmappable: &[UnmappableItem],
+    choices: &[ResolverAction],
+    ctx: SubmitContext<'_>,
+) -> SubmitBody {
+    let moved: Vec<MovedToSummaryItem> = unmappable
+        .iter()
+        .zip(choices)
+        .filter(|(_, action)| **action == ResolverAction::MoveToSummary)
+        .map(|(item, _)| MovedToSummaryItem {
+            comment: item.comment.clone(),
+            file: item.file.clone(),
+        })
+        .collect();
+    let review: Vec<Comment> = session
+        .review_comments
+        .iter()
+        .filter(|c| !c.is_locked())
+        .cloned()
+        .collect();
+    SubmitBody {
+        body: build_review_body(&review, &moved, ctx),
+        summary_ids: moved.iter().map(|m| m.comment.id.clone()).collect(),
+        review_ids: review.iter().map(|c| c.id.clone()).collect(),
+    }
+}
+
+/// Every comment a submit sent: placed inline, replies, moved into the
+/// body, and the review comments; to mark sent once the forge took them
+/// (`ReviewSession::mark_comments_sent`).
+pub fn sent_comment_ids(plan: &SubmitPlan, body: &SubmitBody) -> std::collections::HashSet<String> {
+    plan.mappable
+        .iter()
+        .map(|c| c.comment_id.clone())
+        .chain(plan.replies.iter().map(|r| r.comment_id.clone()))
+        .chain(body.summary_ids.iter().cloned())
+        .chain(body.review_ids.iter().cloned())
+        .collect()
+}
+
+/// What a sent comment becomes: pushed as a draft for a pending review,
+/// submitted otherwise.
+pub fn sent_state(event: SubmitEvent) -> crate::model::comment::CommentLifecycleState {
+    match event {
+        SubmitEvent::Draft => crate::model::comment::CommentLifecycleState::PushedDraft,
+        _ => crate::model::comment::CommentLifecycleState::Submitted,
+    }
+}
+
+/// `:submit replies`: each reply posted on its own, in order, stopping at
+/// the first failure (the rest stay drafts). The comment ids of the replies
+/// sent, and the failure's words.
+pub fn send_replies<B: crate::forge::traits::ForgeBackend + ?Sized>(
+    backend: &B,
+    details: &crate::forge::traits::PullRequestDetails,
+    replies: &[ThreadReply],
+) -> (Vec<String>, Option<String>) {
+    let mut sent = Vec::new();
+    for reply in replies {
+        if let Err(e) = backend.reply_to_thread(details, reply) {
+            return (sent, Some(e.to_string()));
+        }
+        sent.push(reply.comment_id.clone());
+    }
+    (sent, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::comment::{Comment, CommentType, LineContext, LineRange, LineSide};
     use crate::model::diff_types::{DiffHunk, DiffLine, FileStatus, LineOrigin};
     use std::path::PathBuf;
+
+    /// A forge that takes replies until one it refuses, keeping their order.
+    struct Replying {
+        refuse: &'static str,
+        seen: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl crate::forge::traits::ForgeBackend for Replying {
+        fn list_pull_requests(
+            &self,
+            _query: crate::forge::traits::PullRequestListQuery,
+        ) -> crate::error::Result<crate::forge::traits::PagedPullRequests> {
+            unimplemented!()
+        }
+        fn get_pull_request(
+            &self,
+            _target: crate::forge::traits::PullRequestTarget,
+        ) -> crate::error::Result<crate::forge::traits::PullRequestDetails> {
+            unimplemented!()
+        }
+        fn get_pull_request_diff(
+            &self,
+            _pr: &crate::forge::traits::PullRequestDetails,
+        ) -> crate::error::Result<Vec<crate::model::FilePatch>> {
+            unimplemented!()
+        }
+        fn fetch_file_lines(
+            &self,
+            _request: crate::forge::traits::ForgeFileLinesRequest,
+        ) -> crate::error::Result<Vec<DiffLine>> {
+            unimplemented!()
+        }
+        fn list_review_threads(
+            &self,
+            _pr: &crate::forge::traits::PullRequestDetails,
+        ) -> crate::error::Result<Vec<crate::forge::remote_comments::RemoteReviewThread>> {
+            unimplemented!()
+        }
+        fn list_pull_request_commits(
+            &self,
+            _pr: &crate::forge::traits::PullRequestDetails,
+        ) -> crate::error::Result<Vec<crate::forge::traits::PullRequestCommit>> {
+            unimplemented!()
+        }
+        fn get_pull_request_commit_range_diff(
+            &self,
+            _pr: &crate::forge::traits::PullRequestDetails,
+            _start_sha: &str,
+            _end_sha: &str,
+        ) -> crate::error::Result<Vec<crate::model::FilePatch>> {
+            unimplemented!()
+        }
+        fn create_review(
+            &self,
+            _pr: &crate::forge::traits::PullRequestDetails,
+            _request: crate::forge::traits::CreateReviewRequest<'_>,
+        ) -> crate::error::Result<crate::forge::traits::GhCreateReviewResponse> {
+            unimplemented!()
+        }
+        fn reply_to_thread(
+            &self,
+            _pr: &crate::forge::traits::PullRequestDetails,
+            reply: &ThreadReply,
+        ) -> crate::error::Result<()> {
+            if reply.comment_id == self.refuse {
+                return Err(crate::error::TuicrError::UnsupportedOperation(
+                    "locked".into(),
+                ));
+            }
+            self.seen.borrow_mut().push(reply.comment_id.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn should_send_replies_in_order_and_stop_at_the_first_refused() {
+        let details = crate::forge::traits::PullRequestDetails {
+            repository: crate::forge::traits::ForgeRepository::github("github.com", "o", "r"),
+            number: 1,
+            title: String::new(),
+            url: String::new(),
+            state: "OPEN".into(),
+            is_draft: false,
+            author: None,
+            head_ref_name: String::new(),
+            base_ref_name: String::new(),
+            head_sha: String::new(),
+            base_sha: String::new(),
+            body: String::new(),
+            updated_at: None,
+            closed: false,
+            merged_at: None,
+            diff_start_sha: None,
+        };
+        let reply = |id: &str| ThreadReply {
+            thread_id: "t".into(),
+            body: "b".into(),
+            comment_id: id.into(),
+        };
+        let forge = Replying {
+            refuse: "c",
+            seen: Default::default(),
+        };
+        let (sent, error) = send_replies(
+            &forge,
+            &details,
+            &[reply("a"), reply("b"), reply("c"), reply("d")],
+        );
+        assert_eq!(sent, ["a", "b"]);
+        assert!(error.unwrap().contains("locked"));
+        assert_eq!(*forge.seen.borrow(), ["a", "b"], "d is not tried");
+        let (sent, error) = send_replies(&forge, &details, &[reply("e")]);
+        assert_eq!((sent, error), (vec!["e".to_string()], None));
+    }
 
     fn line(origin: LineOrigin, new: Option<u32>, old: Option<u32>) -> DiffLine {
         DiffLine {
@@ -1366,5 +1680,63 @@ mod tests {
             Some("REQUEST_CHANGES")
         );
         assert_eq!(SubmitEvent::Draft.github_event(), None);
+    }
+
+    // Locked review comments
+
+    fn session_with_review(comments: Vec<Comment>) -> crate::model::ReviewSession {
+        let mut session = crate::model::ReviewSession::new(
+            PathBuf::from("/repo"),
+            "abc".to_string(),
+            None,
+            crate::model::review::SessionDiffSource::WorkingTree,
+        );
+        session.review_comments = comments;
+        session
+    }
+
+    fn locked(content: &str) -> Comment {
+        let mut c = note(content);
+        c.lifecycle_state = crate::model::comment::CommentLifecycleState::Submitted;
+        c
+    }
+
+    #[test]
+    fn submit_body_leaves_out_locked_review_comments() {
+        let fresh = note("still local");
+        let session = session_with_review(vec![locked("already sent"), fresh.clone()]);
+        let forge = default_config();
+        let types = test_comment_types();
+        let body = submit_body(&session, &[], &[], ctx_of(&forge, &types));
+        assert!(body.body.contains("still local"));
+        assert!(!body.body.contains("already sent"));
+        assert_eq!(body.review_ids, vec![fresh.id]);
+    }
+
+    #[test]
+    fn plan_submit_counts_only_unlocked_review_comments() {
+        let forge = default_config();
+        let types = test_comment_types();
+        let session = session_with_review(vec![locked("already sent")]);
+        let plan = plan_submit(
+            &session,
+            &[],
+            SubmitEvent::Comment,
+            "abc".to_string(),
+            ctx_of(&forge, &types),
+            |_| true,
+        );
+        assert!(matches!(plan, Err(SubmitRefusal::NothingToSubmit)));
+
+        let session = session_with_review(vec![locked("already sent"), note("still local")]);
+        let plan = plan_submit(
+            &session,
+            &[],
+            SubmitEvent::Comment,
+            "abc".to_string(),
+            ctx_of(&forge, &types),
+            |_| true,
+        );
+        assert!(plan.is_ok());
     }
 }
