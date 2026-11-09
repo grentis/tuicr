@@ -730,8 +730,7 @@ pub fn render_mention_list(frame: &mut Frame, app: &App) {
     if app.input_mode != InputMode::Comment {
         return;
     }
-    let (Some(state), Some((cursor_x, cursor_y))) =
-        (app.mention.as_ref(), app.comment_cursor_screen_pos)
+    let (Some(state), Some((cursor_x, cursor_y))) = (app.mention(), app.comment_cursor_screen_pos)
     else {
         return;
     };

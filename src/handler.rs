@@ -1418,7 +1418,7 @@ pub fn handle_comment_action(app: &mut App, action: Action) {
 /// Esc closes. Returns whether the key was used; in vim Normal mode none is.
 pub fn handle_mention_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
     use crossterm::event::{KeyCode, KeyModifiers};
-    if app.input_mode != InputMode::Comment || app.mention.is_none() {
+    if app.input_mode != InputMode::Comment || app.mention().is_none() {
         return false;
     }
     if app.comment_vim_enabled && app.comment_vim_in_normal_mode() {

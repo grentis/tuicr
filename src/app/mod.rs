@@ -1397,9 +1397,8 @@ pub struct App {
     pub viewed_sync: Option<ViewedSyncWorker>,
     /// That worker's failures.
     pub viewed_sync_rx: Option<std::sync::mpsc::Receiver<ViewedSyncEvent>>,
-    /// `@` suggestion list open in the comment box (PR reviews only).
-    pub mention: Option<MentionState>,
-    /// Forge lookups behind that list, reset when a PR opens.
+    /// The `@` suggestion list in the comment box (PR reviews only), and the
+    /// forge lookups behind it, reset when a PR opens (`App::mention`).
     pub mention_lookup: MentionLookup,
     /// The `<leader>C` post in flight; `Some` blocks another.
     pub pr_comment_rx: Option<std::sync::mpsc::Receiver<PrCommentEvent>>,

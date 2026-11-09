@@ -1337,8 +1337,7 @@ impl App {
         self.comment_is_review_level = false;
         self.comment_is_file_level = file_level;
         self.comment_line = line;
-        self.mention = None;
-        self.mention_lookup.dismissed_at = None;
+        self.mention_lookup.tracker.close();
         self.comment_reply = None;
         self.local_reply = None;
     }
@@ -1355,8 +1354,7 @@ impl App {
         self.comment_line = None;
         self.comment_line_range = None;
         self.editing_comment_id = None;
-        self.mention = None;
-        self.mention_lookup.dismissed_at = None;
+        self.mention_lookup.tracker.close();
         self.comment_reply = None;
         self.local_reply = None;
     }
@@ -1372,8 +1370,7 @@ impl App {
         self.comment_vim_pending = CommentVimPending::None;
         self.comment_reply = None;
         self.local_reply = None;
-        self.mention = None;
-        self.mention_lookup.dismissed_at = None;
+        self.mention_lookup.tracker.close();
         self.comment_reply = None;
         self.comment_is_review_level = false;
         self.comment_is_pr_comment = false;
