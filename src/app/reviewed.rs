@@ -324,37 +324,30 @@ impl App {
     /// unreviewed.
     pub fn toggle_reviewed_for_directory(&mut self, dir: &str) {
         let dir_path = Path::new(dir);
-        // `starts_with` compares whole components (`src/app` is not a prefix
-        // of `src/appearance.rs`). Only files the session knows count.
-        let targets: Vec<(usize, PathBuf)> = self
+        let candidates: Vec<(usize, PathBuf)> = self
             .diff_files
             .iter()
             .enumerate()
             .filter(|(_, file)| self.file_matches_patterns(file))
             .map(|(idx, file)| (idx, file.display_path().clone()))
-            .filter(|(_, path)| path.starts_with(dir_path) && self.session.files.contains_key(path))
             .collect();
+        let paths: Vec<PathBuf> = candidates.iter().map(|(_, path)| path.clone()).collect();
 
-        if targets.is_empty() {
+        let Some((mark, changed_paths)) = self.session.toggle_reviewed_under(dir_path, &paths)
+        else {
             self.set_warning(format!("No reviewable files under {dir}"));
             return;
-        }
+        };
+        let targets: Vec<(usize, PathBuf)> = candidates
+            .into_iter()
+            .filter(|(_, path)| self.session.reviewable_under(dir_path, path))
+            .collect();
 
-        let mark = !targets
-            .iter()
-            .all(|(_, path)| self.session.is_file_reviewed(path));
-
-        let mut changed = 0;
-        for (_, path) in &targets {
-            if let Some(review) = self.session.get_file_mut(path)
-                && review.reviewed != mark
-            {
-                review.reviewed = mark;
-                changed += 1;
-                // Fire-and-forget, as for a single file.
-                self.push_viewed_state(path, mark);
-            }
+        // Fire-and-forget, as for a single file.
+        for path in &changed_paths {
+            self.push_viewed_state(path, mark);
         }
+        let changed = changed_paths.len();
 
         if changed == 0 {
             return;
@@ -390,9 +383,7 @@ impl App {
         };
 
         self.revealed_reviewed_file = None;
-        if let Some(review) = self.session.get_file_mut(&path) {
-            review.reviewed = !review.reviewed;
-            let now_reviewed = review.reviewed;
+        if let Some(now_reviewed) = self.session.toggle_file_reviewed(&path) {
             self.dirty = true;
             // Fire-and-forget: the checkbox follows the marker, never gates it.
             self.push_viewed_state(&path, now_reviewed);
