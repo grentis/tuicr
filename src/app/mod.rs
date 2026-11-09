@@ -756,28 +756,6 @@ impl ConfirmAction {
     }
 }
 
-/// Push a `MappedComment` onto the appropriate bucket. Free function so the
-/// preflight walk doesn't need to keep `self` borrowed mutably.
-fn bucket_mapping(
-    mapped: crate::forge::submit::MappedComment,
-    mappable: &mut Vec<crate::forge::submit::InlineComment>,
-    unmappable: &mut Vec<crate::forge::submit::UnmappableItem>,
-) {
-    use crate::forge::submit::{MappedComment, UnmappableItem};
-    match mapped {
-        MappedComment::Inline(inline) => mappable.push(inline),
-        MappedComment::Unmappable {
-            comment,
-            file,
-            reason,
-        } => unmappable.push(UnmappableItem {
-            comment,
-            file,
-            reason,
-        }),
-    }
-}
-
 /// In-flight `:submit*` state, populated by preflight and consumed by the
 /// resolver + confirmation modals. Lives on `App::submit_state` so the same
 /// preflight output can flow from resolver to confirmation without recomputing.
