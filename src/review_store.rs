@@ -320,6 +320,50 @@ pub enum CommentTarget {
     },
 }
 
+/// A reply to a forge review thread, before it is a draft.
+#[derive(Debug, Clone)]
+pub struct ThreadReplyRequest {
+    /// The thread answered (`RemoteReviewThread::id`).
+    pub thread_id: String,
+    /// The file the thread is on, as the session keys it.
+    pub path: PathBuf,
+    /// The thread's line and side; `None` for a thread on the whole file.
+    pub anchor: Option<(u32, LineSide)>,
+    pub content: String,
+    pub comment_type: CommentType,
+    pub author: String,
+}
+
+/// Add a reply to a forge review thread as a local draft: tied to the
+/// thread by `Comment::reply_to_thread`, stored at the thread's anchor (a
+/// file comment when it has none), and sent on submit inside that thread.
+pub fn add_thread_reply(
+    session: &mut ReviewSession,
+    request: ThreadReplyRequest,
+) -> Result<Comment> {
+    let content = request.content.trim().to_string();
+    if content.is_empty() {
+        return Err(TuicrError::InvalidInput(
+            "a reply cannot be empty".to_string(),
+        ));
+    }
+    let side = request.anchor.map(|(_, side)| side);
+    let mut comment = Comment::new(content, request.comment_type, side).with_author(request.author);
+    comment.reply_to_thread = Some(request.thread_id);
+    let review = session.get_file_mut(&request.path).ok_or_else(|| {
+        TuicrError::InvalidInput(format!(
+            "{} is not part of this review",
+            request.path.display()
+        ))
+    })?;
+    match request.anchor {
+        Some((line, _)) => review.add_line_comment(line, comment.clone()),
+        None => review.add_file_comment(comment.clone()),
+    }
+    session.updated_at = Utc::now();
+    Ok(comment)
+}
+
 /// Add a local draft comment to an in-memory session.
 ///
 /// This is the shared primitive used by the TUI and by [`ReviewStore`].

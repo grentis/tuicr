@@ -86,22 +86,23 @@ impl App {
         target: ThreadReplyTarget,
         content: String,
     ) -> String {
-        let side = self.comment_line.map(|(_, side)| side);
-        let mut comment = Comment::new(content, self.comment_type.clone(), side)
-            .with_author(self.username.clone());
-        comment.reply_to_thread = Some(target.thread_id);
-        let line = self.comment_line.map(|(line, _)| line);
-        let Some(review) = self.session.get_file_mut(&target.path) else {
-            return format!(
-                "Error: Could not save reply: {} is not part of this review",
-                target.path.display()
-            );
+        let request = crate::review_store::ThreadReplyRequest {
+            thread_id: target.thread_id,
+            path: target.path.clone(),
+            anchor: self.comment_line,
+            content,
+            comment_type: self.comment_type.clone(),
+            author: self.username.clone(),
         };
-        match line {
-            Some(line) => review.add_line_comment(line, comment),
-            None => review.add_file_comment(comment),
+        // The library's own reason: the file not in the review, or the reply
+        // empty.
+        if let Err(e) = crate::review_store::add_thread_reply(&mut self.session, request) {
+            let why = match e {
+                crate::error::TuicrError::InvalidInput(why) => why,
+                e => e.to_string(),
+            };
+            return format!("Error: Could not save reply: {why}");
         }
-        self.session.updated_at = Utc::now();
         format!(
             "Reply to {} saved \u{00b7} sent with :submit",
             reply_target_label(target.author.as_deref())
