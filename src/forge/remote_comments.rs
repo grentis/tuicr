@@ -254,6 +254,42 @@ pub fn group_threads_by_path(
     groups
 }
 
+/// A pull request's review comments as the forge holds them, read together:
+/// its line threads, deduplicated, and its review summaries. Each read keeps
+/// its own failure, so one failing does not lose the other.
+#[derive(Debug, Clone)]
+pub struct RemoteReview {
+    pub threads: std::result::Result<Vec<RemoteReviewThread>, String>,
+    pub summaries: std::result::Result<Vec<RemoteReviewSummary>, String>,
+}
+
+impl RemoteReview {
+    /// Both reads came back: what the review shows of the forge is whole,
+    /// so drafts already sent can be dropped (see
+    /// `ReviewSession::prune_locked_comments`).
+    pub fn is_complete(&self) -> bool {
+        self.threads.is_ok() && self.summaries.is_ok()
+    }
+}
+
+/// Read a pull request's threads and review summaries. Blocking: run it off
+/// the UI thread.
+///
+/// Public for programs that use tuicr as a library, so they read the forge's
+/// comments as tuicr does.
+pub fn fetch_remote_review(
+    backend: &dyn crate::forge::traits::ForgeBackend,
+    pr: &crate::forge::traits::PullRequestDetails,
+) -> RemoteReview {
+    RemoteReview {
+        threads: backend
+            .list_review_threads(pr)
+            .map(dedupe_threads)
+            .map_err(|e| e.to_string()),
+        summaries: backend.list_review_summaries(pr).map_err(|e| e.to_string()),
+    }
+}
+
 /// Remove duplicate forge threads while preserving the first occurrence.
 ///
 /// A thread's forge-assigned ID is stable across pagination and refreshes, so

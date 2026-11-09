@@ -1143,12 +1143,8 @@ impl App {
                 show_pr_checks,
                 show_pr_comments,
             );
-            let threads = backend
-                .list_review_threads(&details_clone)
-                .map_err(|e| e.to_string());
-            let summaries = backend
-                .list_review_summaries(&details_clone)
-                .map_err(|e| e.to_string());
+            let crate::forge::remote_comments::RemoteReview { threads, summaries } =
+                crate::forge::remote_comments::fetch_remote_review(&*backend, &details_clone);
             let _ = tx.send(PrThreadsEvent::Done {
                 repository,
                 pr_number,
@@ -1202,6 +1198,8 @@ impl App {
                 let mut had_error = false;
                 let mut threads_loaded = false;
                 match threads {
+                    // `fetch_remote_review` dedupes already; an event built
+                    // elsewhere may not have, so here too.
                     Ok(t) => {
                         self.forge_review_threads =
                             crate::forge::remote_comments::dedupe_threads(t);
@@ -1344,15 +1342,10 @@ impl App {
         // Sync thread + summary fetch — tests assert on
         // `app.forge_review_threads`/`forge_review_summaries` immediately
         // after this returns.
-        let threads = backend
-            .list_review_threads(&opened.details)
-            .unwrap_or_default();
-        let summaries = backend
-            .list_review_summaries(&opened.details)
-            .unwrap_or_default();
+        let remote = crate::forge::remote_comments::fetch_remote_review(&*backend, &opened.details);
         self.enter_pr_diff_mode(backend, opened)?;
-        self.forge_review_threads = crate::forge::remote_comments::dedupe_threads(threads);
-        self.forge_review_summaries = summaries;
+        self.forge_review_threads = remote.threads.unwrap_or_default();
+        self.forge_review_summaries = remote.summaries.unwrap_or_default();
         self.prune_locked_comments();
         self.rebuild_annotations();
         Ok(())
