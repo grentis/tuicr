@@ -301,6 +301,19 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// How diffs compare whitespace: `ignore_whitespace`, with
+    /// `[ignore_whitespace_overrides]` for `"auto"`.
+    pub fn diff_whitespace_mode(&self) -> crate::vcs::DiffWhitespaceMode {
+        use crate::vcs::{DiffWhitespaceMode, WhitespaceAutoPolicy};
+        match self.ignore_whitespace {
+            Some(IgnoreWhitespaceConfig::Auto) => DiffWhitespaceMode::Auto(
+                WhitespaceAutoPolicy::with_overrides(self.ignore_whitespace_overrides.clone()),
+            ),
+            Some(IgnoreWhitespaceConfig::Bool(true)) => DiffWhitespaceMode::IgnoreAll,
+            Some(IgnoreWhitespaceConfig::Bool(false)) | None => DiffWhitespaceMode::Normal,
+        }
+    }
+
     /// Effective export settings, layering `[export]` over the older
     /// top-level `export_legend`.
     ///

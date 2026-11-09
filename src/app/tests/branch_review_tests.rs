@@ -463,7 +463,7 @@ fn should_untag_comments_whose_commit_was_rewritten() {
     let orphan = tagged("on an amended commit", "gone");
     session.review_comments = vec![survivor, orphan];
 
-    let untagged = App::untag_rewritten_commit_comments(&mut session, &ids(&["c1"]));
+    let untagged = crate::branch::untag_rewritten_commit_comments(&mut session, &ids(&["c1"]));
 
     assert_eq!(untagged, 1);
     assert_eq!(session.review_comments[0].commit_id.as_deref(), Some("c1"));
