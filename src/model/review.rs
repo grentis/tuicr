@@ -595,6 +595,91 @@ impl ReviewSession {
             .get(path)
             .is_some_and(|review| review.reviewed_hunks.contains(key))
     }
+
+    /// Drop the comments already sent to the forge (locked: pushed as a
+    /// draft or submitted), from the review, its files and their lines,
+    /// once the forge's own copies have been read back, so none shows twice.
+    /// Returns how many were dropped.
+    pub fn prune_locked_comments(&mut self) -> usize {
+        let before = self.comment_count();
+        self.review_comments.retain(|c| !c.is_locked());
+        for review in self.files.values_mut() {
+            review.file_comments.retain(|c| !c.is_locked());
+            for comments in review.line_comments.values_mut() {
+                comments.retain(|c| !c.is_locked());
+            }
+            review.line_comments.retain(|_, v| !v.is_empty());
+        }
+        before - self.comment_count()
+    }
+
+    /// Move the comments in `ids` to `new_state` (sent: pushed as a draft or
+    /// submitted), stamping the review they went out in, when there was one.
+    pub fn mark_comments_sent(
+        &mut self,
+        ids: &std::collections::HashSet<&str>,
+        new_state: super::comment::CommentLifecycleState,
+        review_id: Option<String>,
+    ) {
+        let mark = |comment: &mut Comment| {
+            if ids.contains(comment.id.as_str()) {
+                comment.lifecycle_state = new_state;
+                comment.remote_review_id = review_id.clone();
+            }
+        };
+        self.review_comments.iter_mut().for_each(mark);
+        for review in self.files.values_mut() {
+            review.file_comments.iter_mut().for_each(mark);
+            review.line_comments.values_mut().flatten().for_each(mark);
+        }
+    }
+
+    /// Toggle one file's reviewed mark. Returns the new state, or `None`
+    /// when the session does not know the file.
+    pub fn toggle_file_reviewed(&mut self, path: &PathBuf) -> Option<bool> {
+        let review = self.files.get_mut(path)?;
+        review.reviewed = !review.reviewed;
+        Some(review.reviewed)
+    }
+
+    /// The file at `path` is one the session knows under `dir` (whole
+    /// components), so a toggle of `dir` takes it.
+    pub fn reviewable_under(&self, dir: &std::path::Path, path: &std::path::Path) -> bool {
+        path.starts_with(dir) && self.files.contains_key(path)
+    }
+
+    /// Toggle every file under `dir`: unmark them if all are reviewed,
+    /// otherwise mark them all, so a second toggle undoes the first.
+    ///
+    /// `candidates` are the paths the caller shows, in its order; only those
+    /// under `dir` (whole components: `src/app` is not a prefix of
+    /// `src/appearance.rs`) that the session knows count. Returns whether
+    /// they were marked and the files whose mark changed, in `candidates`'
+    /// order, or `None` when no such file is under `dir`.
+    pub fn toggle_reviewed_under(
+        &mut self,
+        dir: &std::path::Path,
+        candidates: &[PathBuf],
+    ) -> Option<(bool, Vec<PathBuf>)> {
+        let targets: Vec<&PathBuf> = candidates
+            .iter()
+            .filter(|path| self.reviewable_under(dir, path))
+            .collect();
+        if targets.is_empty() {
+            return None;
+        }
+        let mark = !targets.iter().all(|path| self.is_file_reviewed(path));
+        let mut changed = Vec::new();
+        for path in targets {
+            if let Some(review) = self.files.get_mut(path)
+                && review.reviewed != mark
+            {
+                review.reviewed = mark;
+                changed.push(path.clone());
+            }
+        }
+        Some((mark, changed))
+    }
 }
 
 /// Store `reply` in the thread of `parent_id` within `comments`: after the
