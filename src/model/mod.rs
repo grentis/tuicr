@@ -1,4 +1,5 @@
 pub mod comment;
+pub mod commit_selection;
 pub mod diff_types;
 pub mod review;
 

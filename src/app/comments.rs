@@ -428,7 +428,7 @@ impl App {
 
         if let Some(review) = self.session.files.get(path) {
             for (comment_idx, comment) in review.file_comments.iter().enumerate() {
-                if Self::comment_visible_with(comment, commit_set.as_ref()) {
+                if comment_visible_with(comment, commit_set.as_ref()) {
                     keys.push(CommentNavigatorKey::File {
                         file_idx,
                         comment_idx,
@@ -437,7 +437,7 @@ impl App {
             }
             for (&line, comments) in &review.line_comments {
                 for (comment_idx, comment) in comments.iter().enumerate() {
-                    if !Self::comment_visible_with(comment, commit_set.as_ref()) {
+                    if !comment_visible_with(comment, commit_set.as_ref()) {
                         continue;
                     }
                     let side = comment.side.unwrap_or(LineSide::New);
@@ -944,7 +944,7 @@ impl App {
                     .files
                     .get(&path)
                     .and_then(|r| r.file_comments.get(*comment_idx))
-                    .is_some_and(|c| Self::comment_visible_with(c, commit_set.as_ref()));
+                    .is_some_and(|c| comment_visible_with(c, commit_set.as_ref()));
                 if !visible {
                     return None;
                 }
@@ -966,7 +966,7 @@ impl App {
                     .get(&path)
                     .and_then(|r| r.line_comments.get(line))
                     .and_then(|c| c.get(*comment_idx))
-                    .is_some_and(|c| Self::comment_visible_with(c, commit_set.as_ref()));
+                    .is_some_and(|c| comment_visible_with(c, commit_set.as_ref()));
                 if !visible {
                     return None;
                 }

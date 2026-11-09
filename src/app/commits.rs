@@ -799,17 +799,13 @@ impl App {
     /// strict subset is selected, only comments whose `commit_id` is in
     /// the set (or `None`) are visible.
     pub(in crate::app) fn selected_commit_set(&self) -> Option<std::collections::HashSet<String>> {
-        let (start, end) = self.commit_selection_range?;
-        if start > end || self.review_commits.is_empty() {
-            return Some(std::collections::HashSet::new());
-        }
-        let end = end.min(self.review_commits.len().saturating_sub(1));
-        let set: std::collections::HashSet<String> = (start..=end)
-            .filter_map(|i| self.review_commits.get(i))
-            .filter(|c| !Self::is_special_commit(c))
-            .map(|c| c.id.clone())
-            .collect();
-        Some(set)
+        // The library's (`model::commit_selection`), shared with programs
+        // that use tuicr.
+        crate::model::commit_selection::selected_commit_set(
+            self.commit_selection_range,
+            &self.review_commits,
+            Self::is_special_commit,
+        )
     }
 
     /// Whether a comment should be visible given the current commit
@@ -819,25 +815,10 @@ impl App {
     ///
     /// Allocates the commit set on every call. Callers in hot paths
     /// (per-comment-per-frame renderers, height calculation) should
-    /// compute [`selected_commit_set`] once and use
-    /// [`comment_visible_with`] instead.
+    /// compute [`selected_commit_set`] once and use the library's
+    /// `comment_visible_with` instead.
     pub fn comment_visible(&self, comment: &crate::model::Comment) -> bool {
-        Self::comment_visible_with(comment, self.selected_commit_set().as_ref())
-    }
-
-    /// Pure visibility check against a precomputed commit set — no
-    /// allocation. `set == None` means "no selector", so every comment
-    /// is visible. This is the shared predicate all filtering sites
-    /// should converge on so height math and rendering never drift.
-    pub fn comment_visible_with(
-        comment: &crate::model::Comment,
-        commit_set: Option<&std::collections::HashSet<String>>,
-    ) -> bool {
-        match (&comment.commit_id, commit_set) {
-            (None, _) => true,
-            (Some(_), None) => true,
-            (Some(sha), Some(set)) => set.contains(sha),
-        }
+        comment_visible_with(comment, self.selected_commit_set().as_ref())
     }
 
     /// The single commit SHA to stamp on a *new* comment, when the inline
@@ -845,14 +826,11 @@ impl App {
     /// multi-commit subset, or no selector) — those comments get
     /// `commit_id = None` so they stay visible across selections.
     pub(in crate::app) fn commit_id_for_new_comment(&self) -> Option<String> {
-        let (start, end) = self.commit_selection_range?;
-        if start != end {
-            return None;
-        }
-        self.review_commits
-            .get(start)
-            .filter(|c| !Self::is_special_commit(c))
-            .map(|c| c.id.clone())
+        crate::model::commit_selection::commit_id_for_new_comment(
+            self.commit_selection_range,
+            &self.review_commits,
+            Self::is_special_commit,
+        )
     }
 
     pub(in crate::app) fn set_pr_last_reviewed_commit_from_metadata(

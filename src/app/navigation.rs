@@ -1129,7 +1129,7 @@ impl App {
 
         if let Some(review) = self.session.files.get(path) {
             for comment in &review.file_comments {
-                if !Self::comment_visible_with(comment, commit_set.as_ref()) {
+                if !comment_visible_with(comment, commit_set.as_ref()) {
                     continue;
                 }
                 comment_lines +=
@@ -1182,10 +1182,7 @@ impl App {
                                 {
                                     for comment in comments {
                                         if comment.side == Some(LineSide::Old)
-                                            && Self::comment_visible_with(
-                                                comment,
-                                                commit_set.as_ref(),
-                                            )
+                                            && comment_visible_with(comment, commit_set.as_ref())
                                         {
                                             comment_lines += Self::comment_display_lines(
                                                 comment,
@@ -1200,10 +1197,7 @@ impl App {
                                 {
                                     for comment in comments {
                                         if comment.side != Some(LineSide::Old)
-                                            && Self::comment_visible_with(
-                                                comment,
-                                                commit_set.as_ref(),
-                                            )
+                                            && comment_visible_with(comment, commit_set.as_ref())
                                         {
                                             comment_lines += Self::comment_display_lines(
                                                 comment,
@@ -1247,7 +1241,7 @@ impl App {
                                     {
                                         for comment in comments {
                                             if comment.side != Some(LineSide::Old)
-                                                && Self::comment_visible_with(
+                                                && comment_visible_with(
                                                     comment,
                                                     commit_set.as_ref(),
                                                 )
@@ -1299,7 +1293,7 @@ impl App {
                                             {
                                                 for comment in comments {
                                                     if comment.side == Some(LineSide::Old)
-                                                        && Self::comment_visible_with(
+                                                        && comment_visible_with(
                                                             comment,
                                                             commit_set.as_ref(),
                                                         )
@@ -1320,7 +1314,7 @@ impl App {
                                             {
                                                 for comment in comments {
                                                     if comment.side != Some(LineSide::Old)
-                                                        && Self::comment_visible_with(
+                                                        && comment_visible_with(
                                                             comment,
                                                             commit_set.as_ref(),
                                                         )
@@ -1365,7 +1359,7 @@ impl App {
                                     {
                                         for comment in comments {
                                             if comment.side != Some(LineSide::Old)
-                                                && Self::comment_visible_with(
+                                                && comment_visible_with(
                                                     comment,
                                                     commit_set.as_ref(),
                                                 )
