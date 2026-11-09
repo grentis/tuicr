@@ -161,7 +161,10 @@ impl GitBackend {
         Self::discover_from(&cwd, preference, whitespace_mode)
     }
 
-    pub(crate) fn discover_from(
+    /// Discover a git repository from `cwd`, without the process's current
+    /// directory: for programs that use tuicr as a library and read several
+    /// repositories, or from several threads.
+    pub fn discover_from(
         cwd: &Path,
         preference: GitBackendPreference,
         whitespace_mode: DiffWhitespaceMode,
