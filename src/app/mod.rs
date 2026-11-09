@@ -1075,6 +1075,18 @@ pub use git_actions::{DiscardRequest, GitFileState};
 pub use mentions::{MENTION_LIST_MAX_ROWS, MentionEvent, MentionLookup, MentionState};
 pub use thread_reply::ThreadReplyTarget;
 
+/// A pull request opened through [`crate::forge::pr_open`] with the review
+/// tuicr saved for it: the session for its head when there is one, else the
+/// last head's carried forward, else the fresh one it came with.
+///
+/// Public for programs that use tuicr as a library, so the review they open
+/// for a pull request is the one tuicr opens.
+pub fn opened_pr_with_saved_session(
+    opened: crate::forge::pr_open::OpenedPullRequest,
+) -> Result<crate::forge::pr_open::OpenedPullRequest> {
+    App::opened_pr_with_persisted_session(opened)
+}
+
 /// Outcome of posting a PR conversation comment.
 #[derive(Debug)]
 pub enum PrCommentEvent {
