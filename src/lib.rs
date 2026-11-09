@@ -18,6 +18,7 @@ pub mod process;
 pub mod profile;
 pub mod review_cli;
 pub mod review_store;
+pub mod session_sync;
 pub mod slug;
 pub mod syntax;
 pub mod terminal_state;

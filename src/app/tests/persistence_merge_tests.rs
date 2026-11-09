@@ -51,7 +51,7 @@ fn should_merge_external_comment_without_losing_local_comment() {
     push_file_comment(&mut current, "local", "from tui");
     push_file_comment(&mut latest, "external", "from cli");
 
-    let changed = App::merge_external_session_changes(&mut current, &base, &latest);
+    let changed = crate::session_sync::merge_external_session_changes(&mut current, &base, &latest);
 
     assert_eq!(changed, 1);
     assert_eq!(file_comment_ids(&current), vec!["local", "external"]);
@@ -69,7 +69,7 @@ fn should_not_resurrect_locally_deleted_comment_when_disk_is_unchanged() {
         .clear();
     let latest = base.clone();
 
-    let changed = App::merge_external_session_changes(&mut current, &base, &latest);
+    let changed = crate::session_sync::merge_external_session_changes(&mut current, &base, &latest);
 
     assert_eq!(changed, 0);
     assert!(file_comment_ids(&current).is_empty());
@@ -87,7 +87,7 @@ fn should_apply_external_edit_when_comment_is_unchanged_locally() {
         .file_comments[0]
         .content = "new".to_string();
 
-    let changed = App::merge_external_session_changes(&mut current, &base, &latest);
+    let changed = crate::session_sync::merge_external_session_changes(&mut current, &base, &latest);
 
     assert_eq!(changed, 1);
     assert_eq!(
