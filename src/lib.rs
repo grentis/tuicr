@@ -3,6 +3,7 @@ pub mod browser;
 pub mod cli;
 pub mod comment_vim;
 pub mod config;
+pub mod connect;
 pub mod editor;
 pub mod error;
 pub mod forge;
