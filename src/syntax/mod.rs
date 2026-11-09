@@ -7,10 +7,10 @@ use two_face::theme::EmbeddedThemeName;
 use crate::model::diff_types::{DiffFile, DiffHunk, LineOrigin};
 
 /// A single line of highlighted spans (style + text pairs).
-pub(crate) type HighlightedSpans = Vec<(Style, String)>;
+pub type HighlightedSpans = Vec<(Style, String)>;
 
 /// Per-line highlight results for a file: `Some` if the line was highlighted, `None` on failure.
-pub(crate) type HighlightedLines = Vec<Option<HighlightedSpans>>;
+pub type HighlightedLines = Vec<Option<HighlightedSpans>>;
 
 /// Whether `path` belongs to a "container" syntax that embeds other languages
 /// and so needs the full file (not just a hunk slice) in scope before its
@@ -297,7 +297,11 @@ impl SyntaxHighlighter {
     /// Skip container-grammar files (`needs_full_file_highlight`): they need
     /// full-file content this cache doesn't hold, so keep their existing spans
     /// rather than color them out of context.
-    pub(crate) fn rehighlight_hunk_in_place(&self, hunk: &mut DiffHunk, file_path: &Path) {
+    ///
+    /// Public for programs that use tuicr as a library: a diff read by a
+    /// [`VcsBackend`](crate::vcs::VcsBackend) comes uncolored, and this colors
+    /// a hunk the way tuicr does.
+    pub fn rehighlight_hunk_in_place(&self, hunk: &mut DiffHunk, file_path: &Path) {
         if needs_full_file_highlight(file_path) {
             return;
         }
