@@ -311,13 +311,23 @@ pub(crate) fn mark_session_active_in_dir(
     path: &Path,
     reviews_dir: &Path,
 ) -> Result<()> {
+    mark_session_active_for_pid_in_dir(session, path, reviews_dir, std::process::id())
+}
+
+/// [`mark_session_active_in_dir`] for process `pid`: its one entry, keyed
+/// by the pid, replacing any it had and any other entry for `path`.
+pub(crate) fn mark_session_active_for_pid_in_dir(
+    session: &ReviewSession,
+    path: &Path,
+    reviews_dir: &Path,
+    pid: u32,
+) -> Result<()> {
     maybe_migrate(reviews_dir)?;
     let slug = slug_for_session(session)?.to_string();
     let path = normalize_active_path(path);
     with_reviews_dir_lock(reviews_dir, || {
         let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
         active.prune_stale();
-        let pid = std::process::id();
         // Re-registering on save keeps what the agent and its waiter left.
         let previous = active
             .sessions
@@ -589,10 +599,14 @@ pub(crate) fn clear_active_session_for_pid() -> Result<()> {
 }
 
 pub(crate) fn clear_active_session_for_pid_in_dir(reviews_dir: &Path) -> Result<()> {
+    clear_active_session_of_pid_in_dir(reviews_dir, std::process::id())
+}
+
+/// [`clear_active_session_for_pid_in_dir`] for process `pid`.
+pub(crate) fn clear_active_session_of_pid_in_dir(reviews_dir: &Path, pid: u32) -> Result<()> {
     maybe_migrate(reviews_dir)?;
     with_reviews_dir_lock(reviews_dir, || {
         let mut active = load_active_sessions_unlocked(reviews_dir).unwrap_or_default();
-        let pid = std::process::id();
         active.sessions.retain(|entry| entry.pid != pid);
         save_active_sessions_unlocked(reviews_dir, &active)
     })
@@ -657,7 +671,7 @@ struct ActiveSessionEntry {
 
 /// A `tuicr review done`: when, what it says, and up to which read it covers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct AgentDone {
+pub struct AgentDone {
     pub at: chrono::DateTime<Utc>,
     /// `agent_read_at` when it was sent: every `:submit` before that is done.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -666,9 +680,11 @@ pub(crate) struct AgentDone {
     pub message: Option<String>,
 }
 
-/// What a tuicr watching its agent sees on its own entry.
+/// What a tuicr watching its agent sees on its own entry: the last
+/// `:submit` that reached the waiter, the agent's last `tuicr review done`,
+/// and whether a `tuicr review wait` is waiting now.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AgentProgress {
+pub struct AgentProgress {
     pub submitted_at: Option<chrono::DateTime<Utc>>,
     pub done: Option<AgentDone>,
     pub waiting: bool,
